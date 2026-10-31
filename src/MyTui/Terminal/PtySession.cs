@@ -60,6 +60,7 @@ internal sealed class PtySession : IDisposable
             throw new IOException(PtyNative.Describe("posix_openpt"));
         }
 
+        PtySession? session = null;
         try
         {
             if (PtyNative.GrantPt(master) < 0)
@@ -82,7 +83,7 @@ internal sealed class PtySession : IDisposable
             }
 
             PtyNative.Close(slave);
-            ApplySize(master, columns, rows);
+            PtyNative.SetWindowSize(master, columns, rows);
 
             string[] argv = arguments.Count == 0 ? [file] : arguments.ToArray();
             using var actions = new SpawnActions();
@@ -99,11 +100,22 @@ internal sealed class PtySession : IDisposable
                 throw new IOException($"posix_spawn failed: {Marshal.GetPInvokeErrorMessage(spawned)} ({spawned})");
             }
 
-            return new PtySession(master, pid);
+            var started = new PtySession(master, pid);
+            session = started;
+            started.HoldSize(columns, rows);
+            return started;
         }
         catch
         {
-            PtyNative.Close(master);
+            if (session is not null)
+            {
+                session.Dispose();
+            }
+            else
+            {
+                PtyNative.Close(master);
+            }
+
             throw;
         }
     }
@@ -179,8 +191,48 @@ internal sealed class PtySession : IDisposable
                 return;
             }
 
-            ApplySize(_master, columns, rows);
+            HoldSize(columns, rows);
         }
+    }
+
+    private void HoldSize(int columns, int rows)
+    {
+        for (int attempt = 0; attempt < 40; attempt++)
+        {
+            PtyNative.SetWindowSize(_master, columns, rows);
+            if (PtyNative.ReadWindowSize(_master, out int gotColumns, out int gotRows)
+                && gotColumns == columns
+                && gotRows == rows)
+            {
+                if (_pid > 1)
+                {
+                    _ = PtyNative.Kill(-_pid, PtyNative.SigWinch);
+                }
+
+                return;
+            }
+
+            Thread.Sleep(5);
+        }
+
+        throw new IOException($"The kernel did not keep the window size {columns}x{rows}.");
+    }
+
+    internal bool PollExited()
+    {
+        if (_pid <= 0 || Volatile.Read(ref _reaped) != 0)
+        {
+            return true;
+        }
+
+        int waited = PtyNative.WaitPid(_pid, out _, PtyNative.WaitNoHang);
+        if (waited == _pid || (waited < 0 && Marshal.GetLastPInvokeError() == PtyNative.Echild))
+        {
+            Interlocked.Exchange(ref _reaped, 1);
+            return true;
+        }
+
+        return false;
     }
 
     internal static bool IsRunning(int pid)
@@ -364,19 +416,6 @@ internal sealed class PtySession : IDisposable
 
                 throw new IOException(PtyNative.Describe("waitpid"));
             }
-        }
-    }
-
-    private static void ApplySize(int master, int columns, int rows)
-    {
-        var size = new PtyNative.UnixWinsize
-        {
-            Rows = (ushort)Math.Min(rows, ushort.MaxValue),
-            Columns = (ushort)Math.Min(columns, ushort.MaxValue),
-        };
-        if (PtyNative.IoCtlWindow(master, PtyNative.WindowSizeRequest, ref size) < 0)
-        {
-            throw new IOException(PtyNative.Describe("TIOCSWINSZ"));
         }
     }
 

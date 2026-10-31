@@ -18,4 +18,8 @@
     <ProjectReference Include="..\..\src\MyTui\MyTui.csproj" />
   </ItemGroup>
 
+  <Target Name="CopyPtyShim" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\src\MyTui\bin\$(Configuration)\$(TargetFramework)\libmytui_pty.dylib" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

@@ -25,6 +25,12 @@ internal static partial class PtyNative
 
     internal static nuint WindowSizeRequest => OperatingSystem.IsMacOS() ? 0x80087467 : 0x5414u;
 
+    internal static nuint WindowSizeQuery => OperatingSystem.IsMacOS() ? 0x40087468 : 0x5413u;
+
+    internal const int SigWinch = 28;
+
+    private static readonly IntPtr MacIoctl = OperatingSystem.IsMacOS() ? LoadMacIoctl() : IntPtr.Zero;
+
     /// <summary>macOS value is from spawn.h on this machine. Linux value is glibc's POSIX_SPAWN_SETSID.</summary>
     internal static short SpawnSetSid => OperatingSystem.IsMacOS() ? (short)0x400 : (short)0x80;
 
@@ -79,7 +85,69 @@ internal static partial class PtyNative
     internal static partial int SpawnAttrDestroy(IntPtr attributes);
 
     [LibraryImport("libc", EntryPoint = "ioctl", SetLastError = true)]
-    internal static partial int IoCtlWindow(int fd, nuint request, ref UnixWinsize size);
+    private static partial int IoCtlWindow(int fd, nuint request, ref UnixWinsize size);
+
+    internal static void SetWindowSize(int fd, int columns, int rows)
+    {
+        var size = new UnixWinsize
+        {
+            Rows = (ushort)Math.Min(rows, ushort.MaxValue),
+            Columns = (ushort)Math.Min(columns, ushort.MaxValue),
+        };
+        int result = WindowIoctl(fd, WindowSizeRequest, ref size);
+        if (result < 0)
+        {
+            throw new IOException(Describe("TIOCSWINSZ"));
+        }
+    }
+
+    internal static bool ReadWindowSize(int fd, out int columns, out int rows)
+    {
+        var size = new UnixWinsize();
+        int result = WindowIoctl(fd, WindowSizeQuery, ref size);
+        columns = size.Columns;
+        rows = size.Rows;
+        return result >= 0;
+    }
+
+    private static int WindowIoctl(int fd, nuint request, ref UnixWinsize size)
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return IoCtlWindow(fd, request, ref size);
+        }
+
+        unsafe
+        {
+            fixed (UnixWinsize* pointer = &size)
+            {
+                var ioctl = (delegate* unmanaged[Cdecl]<int, nuint, UnixWinsize*, int>)MacIoctl;
+                return ioctl(fd, request, pointer);
+            }
+        }
+    }
+
+    private static IntPtr LoadMacIoctl()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "libmytui_pty.dylib");
+        if (!File.Exists(path))
+        {
+            string? directory = Path.GetDirectoryName(typeof(PtyNative).Assembly.Location);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                path = Path.Combine(directory, "libmytui_pty.dylib");
+            }
+        }
+
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException(
+                "libmytui_pty.dylib was not built next to my-tui. The macOS window-size call needs that shim.",
+                path);
+        }
+
+        return NativeLibrary.GetExport(NativeLibrary.Load(path), "mytui_ioctl_winsize");
+    }
 
     [LibraryImport("libc", EntryPoint = "read", SetLastError = true)]
     internal static partial nint Read(int fd, IntPtr buffer, nuint count);

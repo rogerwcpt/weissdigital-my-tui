@@ -1,7 +1,6 @@
-using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using System.Text;
 using Terminal.Gui.App;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using MyTui.Terminal;
@@ -9,54 +8,42 @@ using MyTui.Terminal;
 namespace MyTui.UI;
 
 /// <summary>
-/// Left list and one live shell. The other rows are placeholders, not a session model.
+/// In-memory session list. One grid is drawn. The others keep their process and VT state.
 /// </summary>
 internal sealed class SessionScreen : IDisposable
 {
-    private static readonly string[] Names = ["Shell", "Claude Code", "PI", "Codex"];
-
     private readonly IApplication _app;
-    private readonly PtySession _session;
-    private readonly RawTerminalView _terminal;
-    private readonly Label _note;
-    private readonly ListView _list;
-    private readonly ConcurrentQueue<string> _chunks = new();
-    private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
+    private readonly List<TerminalSession> _sessions = [];
+    private readonly ObservableCollection<string> _labels = [];
+    private readonly SessionList _list;
+    private readonly CellGridView _grid;
+    private readonly Label _empty;
     private object? _timeout;
-    private int _started;
+    private int _blinkPhase = -1;
     private bool _disposed;
 
     internal SessionScreen(IApplication app)
     {
         _app = app;
-        string shell = ShellLocator.Resolve();
-        _session = PtySession.Start(shell, [shell], 80, 24);
-        _terminal = new RawTerminalView(_session)
+        _grid = new CellGridView(NewShell, ToggleFocus);
+        _empty = new Label
         {
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(),
-        };
-        _note = new Label
-        {
-            X = 0,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill(),
-            Visible = false,
+            Height = 1,
             CanFocus = false,
-            Text = "Placeholder. Phase 0 runs one shell.",
+            Visible = false,
+            Text = "Ctrl+N starts a shell.",
         };
-        _list = new ListView
+        _list = new SessionList(this)
         {
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill(),
         };
-        _list.SetSource(new ObservableCollection<string>(Names));
-        _list.SelectedItem = 0;
+        _list.SetSource(_labels);
         _list.ValueChanged += (_, args) => Show(args.NewValue);
 
         Sessions = new FrameView
@@ -64,7 +51,7 @@ internal sealed class SessionScreen : IDisposable
             Title = "Sessions",
             X = 0,
             Y = 0,
-            Width = 20,
+            Width = 28,
             Height = Dim.Fill(),
         };
         Sessions.Add(_list);
@@ -77,7 +64,7 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = Dim.Fill(),
         };
-        Content.Add(_terminal, _note);
+        Content.Add(_grid, _empty);
     }
 
     internal FrameView Sessions { get; }
@@ -86,15 +73,68 @@ internal sealed class SessionScreen : IDisposable
 
     internal void Start()
     {
-        if (Interlocked.Exchange(ref _started, 1) != 0)
+        if (_timeout is not null)
         {
             return;
         }
 
-        _session.Output += OnOutput;
-        _session.StartReading();
-        _timeout = _app.AddTimeout(TimeSpan.FromMilliseconds(30), Drain);
-        _terminal.SetFocus();
+        NewShell();
+        _grid.SetFocus();
+        _timeout = _app.AddTimeout(TimeSpan.FromMilliseconds(30), Tick);
+    }
+
+    internal void NewShell()
+    {
+        string shell = ShellLocator.Resolve();
+        int columns = _grid.Viewport.Width > 1 ? _grid.Viewport.Width : 80;
+        int rows = _grid.Viewport.Height > 1 ? _grid.Viewport.Height : 24;
+        var session = TerminalSession.Start(shell, [shell], columns, rows, UniqueName(Path.GetFileName(shell)));
+        _sessions.Add(session);
+        _labels.Add(session.Label);
+        _list.SelectedItem = _sessions.Count - 1;
+        Show(_list.SelectedItem);
+        _grid.SetFocus();
+    }
+
+    internal void CloseSelected()
+    {
+        int index = _list.SelectedItem ?? -1;
+        if (index < 0 || index >= _sessions.Count)
+        {
+            return;
+        }
+
+        TerminalSession session = _sessions[index];
+        _sessions.RemoveAt(index);
+        _labels.RemoveAt(index);
+        if (_grid.Session == session)
+        {
+            _grid.Session = null;
+        }
+
+        session.Dispose();
+        if (_sessions.Count == 0)
+        {
+            _empty.Visible = true;
+            _list.SetFocus();
+            return;
+        }
+
+        int next = Math.Min(index, _sessions.Count - 1);
+        _list.SelectedItem = next;
+        Show(next);
+    }
+
+    internal void ToggleFocus()
+    {
+        if (_grid.HasFocus)
+        {
+            _list.SetFocus();
+        }
+        else if (_grid.Session is not null)
+        {
+            _grid.SetFocus();
+        }
     }
 
     public void Dispose()
@@ -110,35 +150,54 @@ internal sealed class SessionScreen : IDisposable
             _app.RemoveTimeout(_timeout);
         }
 
-        _session.Dispose();
-    }
-
-    private void OnOutput(byte[] bytes)
-    {
-        var chars = new char[Encoding.UTF8.GetMaxCharCount(bytes.Length)];
-        int written = _decoder.GetChars(bytes, chars, flush: false);
-        if (written > 0)
+        foreach (TerminalSession session in _sessions)
         {
-            _chunks.Enqueue(new string(chars, 0, written));
+            session.Dispose();
         }
+
+        _sessions.Clear();
     }
 
-    private bool Drain()
+    private bool Tick()
     {
         if (_disposed)
         {
             return false;
         }
 
-        var text = new StringBuilder();
-        while (_chunks.TryDequeue(out string? chunk))
+        for (int i = 0; i < _sessions.Count; i++)
         {
-            text.Append(chunk);
+            string label = _sessions[i].Label;
+            if (_labels[i] != label)
+            {
+                _labels[i] = label;
+            }
         }
 
-        if (text.Length > 0)
+        TerminalSession? active = _grid.Session;
+        if (active is null)
         {
-            _terminal.AppendRaw(text.ToString());
+            return true;
+        }
+
+        int columns = _grid.Viewport.Width;
+        int rows = _grid.Viewport.Height;
+        if (columns > 1 && rows > 1 && (active.Columns != columns || active.Rows != rows))
+        {
+            active.Resize(columns, rows);
+        }
+
+        int phase = (int)(Environment.TickCount64 / 500);
+        bool blink = _grid.HasFocus && _grid.CursorBlinking && phase != _blinkPhase;
+        if (phase != _blinkPhase)
+        {
+            _blinkPhase = phase;
+            _grid.Blink(phase % 2 == 0);
+        }
+
+        if (active.ConsumeDirty() || blink)
+        {
+            _grid.SetNeedsDraw();
         }
 
         return true;
@@ -147,17 +206,78 @@ internal sealed class SessionScreen : IDisposable
     private void Show(int? index)
     {
         int row = index ?? -1;
-        bool live = row == 0;
-        _terminal.Visible = live;
-        _note.Visible = !live;
-        if (!live && row > 0 && row < Names.Length)
+        if (row < 0 || row >= _sessions.Count)
         {
-            _note.Text = $"{Names[row]} is a placeholder. Phase 0 runs one shell.";
+            _grid.Session = null;
+            _empty.Visible = true;
+            return;
         }
 
-        if (live)
+        _empty.Visible = false;
+        TerminalSession session = _sessions[row];
+        if (_grid.Viewport.Width > 1 && _grid.Viewport.Height > 1)
         {
-            _terminal.SetFocus();
+            session.Resize(_grid.Viewport.Width, _grid.Viewport.Height);
+        }
+
+        _grid.Session = session;
+    }
+
+    private sealed class SessionList : ListView
+    {
+        private readonly SessionScreen _screen;
+
+        internal SessionList(SessionScreen screen) => _screen = screen;
+
+        protected override bool OnKeyDown(Key key)
+        {
+            if (key == Key.Q.WithCtrl && !key.IsAlt && !key.IsShift)
+            {
+                return false;
+            }
+
+            if (key == Key.N.WithCtrl && !key.IsAlt && !key.IsShift)
+            {
+                _screen.NewShell();
+                return true;
+            }
+
+            if (key == Key.O.WithCtrl && !key.IsAlt && !key.IsShift)
+            {
+                _screen.ToggleFocus();
+                return true;
+            }
+
+            if (key == Key.Delete)
+            {
+                _screen.CloseSelected();
+                return true;
+            }
+
+            if (key == Key.Enter)
+            {
+                _screen._grid.SetFocus();
+                return true;
+            }
+
+            return base.OnKeyDown(key);
+        }
+    }
+
+    private string UniqueName(string name)
+    {
+        if (_sessions.All(session => session.Label != name && !session.Label.StartsWith(name + " ", StringComparison.Ordinal)))
+        {
+            return name;
+        }
+
+        for (int i = 2; ; i++)
+        {
+            string candidate = name + " " + i;
+            if (_sessions.All(session => session.Label != candidate))
+            {
+                return candidate;
+            }
         }
     }
 }

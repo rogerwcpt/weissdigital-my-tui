@@ -13,10 +13,10 @@ The plan is in [docs/PLAN.md](docs/PLAN.md). The build order is in [docs/ROADMAP
 - No commercial upsell surface
 - No attempt to replace Ghostty itself as a daily terminal
 
-## Phase 0
+## Run
 
 ```
 dotnet run --project src/MyTui
 ```
 
-Ctrl+Q quits. The first row is one live shell. The other rows are placeholders.
+Ctrl+N starts a shell, Ctrl+O moves between the session list and the terminal, Delete closes the selected session, and Ctrl+Q quits. The first session is `$SHELL`.

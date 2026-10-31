@@ -3,7 +3,7 @@
 **A minimal, terminal-first session orchestrator for bring-your-own CLI agent harnesses.**
 
 > Version: 0.1 (draft)  
-> Status: In progress — Phase 0 complete  
+> Status: In progress — Phase 1 complete  
 > Name: **my-tui**  
 > Binary: `my-tui`  
 > Target: Terminal.Gui + libghostty-vt
@@ -142,12 +142,12 @@ No cost tracking, no context-window meters, no agent-specific icons (keep it gen
 - **Exit criterion**: can launch `bash` or `zsh` and see output, even if scrolling/colors are imperfect. Met 2026-10-31. Decision is in [ROADMAP.md](./ROADMAP.md).
 
 ### Phase 1 — Real terminal pane
-- [ ] Integrate libghostty-vt for correct VT state
-- [ ] Cell-grid renderer inside a Terminal.Gui View (basic 256-color + bold/italic)
-- [ ] Keyboard input forwarding
-- [ ] Resize handling
-- [ ] Multiple concurrent terminal sessions in a list
-- **Exit criterion**: can run `vim`, `htop`, and a CLI agent (Claude Code / PI) with acceptable fidelity
+- [x] Integrate libghostty-vt for correct VT state
+- [x] Cell-grid renderer inside a Terminal.Gui View (basic 256-color + bold/italic)
+- [x] Keyboard input forwarding
+- [x] Resize handling
+- [x] Multiple concurrent terminal sessions in a list
+- **Exit criterion**: can run `vim`, `htop`, and a CLI agent (Claude Code / PI) with acceptable fidelity. Met 2026-10-31 for vim and pi. `htop` is not installed on this machine, so it was not run. Record is in [ROADMAP.md](./ROADMAP.md).
 
 ### Phase 2 — Session model & tabs
 - [ ] Persistent session list (name, cwd, command)
@@ -245,4 +245,4 @@ Stored as `~/.config/my-tui/state.json`.
 
 ## Next Step
 
-Phase 0 is complete. Phase 1 has not started. The build order and the D1–D3 decision are in [ROADMAP.md](./ROADMAP.md).
+Phase 1 is complete. Phase 2 has not started. The build order and the D1–D5 notes are in [ROADMAP.md](./ROADMAP.md).

@@ -3,8 +3,8 @@
 **Phased build plan for the session orchestrator described in [PLAN.md](./PLAN.md).**
 
 > Version: 0.1 (draft)
-> Status: Phase 0 complete
-> Current phase: **Phase 1** (not started)
+> Status: Phase 1 complete
+> Current phase: **Phase 2** (not started)
 > Source of truth: [PLAN.md](./PLAN.md) wins on vision, non-goals, and v1 success. This file only sequences the work.
 
 Do not start a phase until the previous phase’s exit criterion is met and the Decision log below is updated. Non-goals in PLAN.md §1 are binding at every phase.
@@ -299,8 +299,8 @@ Fill these in the phase that owns them. Do not leave a default unspoken once tha
 | D1 | `LibGhostty.Net` vs `DeBlasis.GhosttyVt` | Phase 0 | DeBlasis.GhosttyVt 1.4.1 | Run both probes. Pick the one that loads and reads cells. If neither works, ANSI fallback for Phase 1. |
 | D2 | PTY from the binding vs a platform PTY wrapper | Phase 0 | Platform wrapper (`PtySession`) | Platform wrapper when the binding PTY is missing or cannot spawn a shell. |
 | D3 | `net9.0` vs `net10.0` | Phase 0 | net10.0 | `net9.0` unless Terminal.Gui v2 or the chosen binding requires `net10.0`. |
-| D4 | Scrollback lives in libghostty-vt or a mirrored buffer | Note in Phase 1, act in Phase 3 | | Use VT history if it exists. Do not mirror unless dogfood fails without it. |
-| D5 | Mouse in v1 | Phase 3 | | Not required. |
+| D4 | Scrollback lives in libghostty-vt or a mirrored buffer | Note in Phase 1, act in Phase 3 | VT history. `MaxScrollbackLines` is 10_000. No mirrored buffer and no scrollback UI. | Use VT history if it exists. Do not mirror unless dogfood fails without it. |
+| D5 | Mouse in v1 | Phase 3 | Phase 1 finding: `MouseEncoder` and the mouse modes are in DeBlasis 1.4.1. Nothing is wired. Whether v1 gets mouse stays with Phase 3. | Not required. |
 | D6 | Default command for a new session | Phase 2 | | `$SHELL`, editable before start. Last-used command is a template concern, not the default. |
 | D7 | Open in `$EDITOR` from Files | Phase 2, else Phase 3 | | Yes, if it is spawn-and-return. Otherwise defer; do not block Phase 2. |
 
@@ -321,9 +321,21 @@ Fill these in the phase that owns them. Do not leave a default unspoken once tha
 
 Notes for Phase 1:
 
-- The TextView still shows raw ANSI. The live pane included the prompt's SGR and bracketed-paste bytes as text. The cell grid replaces that view.
+- The Phase 0 TextView showed raw ANSI, including the prompt's SGR. Phase 1 replaced that view with the cell grid.
 - Linux PTY numbers in `PtyNative` are the glibc values and have not been executed on Linux. macOS numbers were read from the headers on this machine.
-- Both probes stay in `spikes/` until Phase 1 folds DeBlasis into the app and removes the other probe.
+- Both probes stay in `spikes/` until Phase 1 folds DeBlasis into the app and removes the other probe. Phase 1 did that: `spikes/` is gone.
+
+### Phase 1 record
+
+- Date: 2026-10-31
+- Binding: DeBlasis.GhosttyVt 1.4.1, referenced by `src/MyTui`. The Phase 0 probes are deleted.
+- Go: the pane is a cell grid, not a TextView. Several shells stay alive in memory. Focus swaps the grid.
+- Evidence:
+  - `dotnet test tests/MyTui.Tests`: 20 passed. Covers SGR bold, red, and italic; two sessions that do not share output; `stty size` seeing the spawned 24×80 and a later 13×51; vim’s intro, `ihello`, and `:q!`; `pi --no-session --offline` exiting on Ctrl+D.
+  - On an 80×24 pty the pane’s `stty size` was 20×48. Growing the host to 32×110 and sending SIGWINCH moved it to 28×78. vim on a 110-column host showed `Moolenaar et al.` on one line, accepted `hello`, and `:q!` restored the shell. Ctrl+N, then Ctrl+O and Up, came back to the first session’s screen. pi 1.4.0 drew its splash, including the ctrl+c/ctrl+d hint. Ctrl+Q exited 0.
+  - `htop` is not installed (`/opt/homebrew/bin/htop` and `/usr/bin/htop` are absent), so that command was not run. vim and pi are the full-screen check that was available.
+- Apple arm64 passes `ioctl`’s extra argument on the stack. `Native/pty_ioctl.c` is the non-variadic wrapper the .NET call goes through. The child’s open of the slave clears a size set before `posix_spawn`, so the size is written again afterwards and read back.
+- With the kitty keyboard protocol on, the encoder answered Ctrl+D with `d` or with no bytes. Ctrl+A through Ctrl+Z fall back to the classic control byte in that case.
 
 ### Fidelity gaps carried forward
 
@@ -331,7 +343,10 @@ Write gaps here at the end of Phase 1 and again after Phase 3.5. A gap that is n
 
 | Gap | Found in | Blocks v1? | Resolution |
 |-----|----------|------------|------------|
-| | | | |
+| Truecolor | Phase 1 | No | Cells carry RGB and that RGB is what Terminal.Gui draws. The host terminal decides how it quantizes. |
+| Ligatures and wide graphemes | Phase 1 | No | One host cell per VT cell. A wide character’s spacer tail is drawn as a space. |
+| Mouse | Phase 1 | No | The binding can encode mouse. There is no handler. D5. |
+| Scrollback UI | Phase 1 | No | The VT keeps 10_000 lines. Nothing moves the viewport. D4, Phase 3. |
 
 ---
 

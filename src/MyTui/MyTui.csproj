@@ -9,7 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="DeBlasis.GhosttyVt" Version="1.4.1" />
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
   </ItemGroup>
+
+  <Target Name="BuildPtyShim" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Exec Command="clang -shared -O2 -o &quot;$(OutputPath)libmytui_pty.dylib&quot; &quot;$(MSBuildThisFileDirectory)Native/pty_ioctl.c&quot; &amp;&amp; codesign -s - &quot;$(OutputPath)libmytui_pty.dylib&quot;" />
+  </Target>
 
 </Project>

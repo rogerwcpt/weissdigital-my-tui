@@ -1,0 +1,317 @@
+using System.Text;
+using Ghostty.Vt;
+using Ghostty.Vt.Enums;
+using Ghostty.Vt.Types;
+using Terminal.Gui.Input;
+using VtTerminal = Ghostty.Vt.Terminal;
+
+namespace MyTui.Terminal;
+
+/// <summary>
+/// One shell: a PTY plus a libghostty-vt grid. Unfocused sessions keep both.
+/// Scrollback stays inside the VT (10_000 lines). There is no scrollback UI.
+/// </summary>
+internal sealed class TerminalSession : IDisposable
+{
+    private readonly Lock _gate = new();
+    private readonly VtTerminal _vt;
+    private readonly KeyEncoder _encoder = new();
+    private readonly RenderState _render = new();
+    private readonly string _name;
+    private PtySession? _pty;
+    private string _title = "";
+    private int _dirty = 1;
+    private bool _disposed;
+
+    private TerminalSession(string name, int columns, int rows)
+    {
+        _name = name;
+        Columns = Math.Max(1, columns);
+        Rows = Math.Max(1, rows);
+        _vt = new VtTerminal(Columns, Rows, Configure);
+    }
+
+    internal int Columns { get; private set; }
+
+    internal int Rows { get; private set; }
+
+    internal int Pid => _pty?.Pid ?? 0;
+
+    internal bool IsRunning => _pty is not null && PtySession.IsRunning(_pty.Pid);
+
+    internal bool HasExited => _pty is null || _pty.PollExited();
+
+    internal string Label
+    {
+        get
+        {
+            string name = string.IsNullOrWhiteSpace(_title) ? _name : _title;
+            return IsRunning ? name : name + " · exited";
+        }
+    }
+
+    /// <summary>Raised on the PTY reader thread. Handlers must not touch the UI or take session locks.</summary>
+    internal event Action? Changed;
+
+    internal static TerminalSession Start(
+        string file,
+        IReadOnlyList<string> arguments,
+        int columns,
+        int rows,
+        string? name = null,
+        IReadOnlyDictionary<string, string>? environment = null)
+    {
+        var session = new TerminalSession(name ?? Path.GetFileName(file), columns, rows);
+        try
+        {
+            session._pty = PtySession.Start(file, arguments, session.Columns, session.Rows, environment);
+            session._pty.Output += session.OnOutput;
+            session._pty.StartReading();
+            return session;
+        }
+        catch
+        {
+            session.Dispose();
+            throw;
+        }
+    }
+
+    internal byte[]? Encode(Key key)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return KeyInput.Encode(_vt, _encoder, key);
+        }
+    }
+
+    internal void Write(ReadOnlySpan<byte> data) => _pty?.Write(data);
+
+    internal void Resize(int columns, int rows)
+    {
+        if (columns < 1 || rows < 1)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_disposed || (columns == Columns && rows == Rows))
+            {
+                return;
+            }
+
+            _vt.Resize(columns, rows);
+            Columns = columns;
+            Rows = rows;
+        }
+
+        _pty?.Resize(columns, rows);
+        MarkDirty();
+    }
+
+    internal bool ConsumeDirty() => Interlocked.Exchange(ref _dirty, 0) == 1;
+
+    internal ScreenFrame Capture()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _render.Update(_vt);
+            return Copy(_render);
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+        }
+
+        if (_pty is not null)
+        {
+            _pty.Output -= OnOutput;
+            _pty.Dispose();
+            _pty = null;
+        }
+
+        lock (_gate)
+        {
+            _encoder.Dispose();
+            _render.Dispose();
+            _vt.Dispose();
+        }
+    }
+
+    private void Configure(TerminalOptions options)
+    {
+        options.MaxScrollbackLines = 10_000;
+        options.OnWritePty = WriteReply;
+        options.OnTitleChanged = OnTitleChanged;
+    }
+
+    private void OnTitleChanged()
+    {
+        _title = Sanitize(_vt.Title);
+        MarkDirty();
+    }
+
+    private void WriteReply(ReadOnlySpan<byte> data)
+    {
+        try
+        {
+            _pty?.Write(data);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The session is closing. Drop the VT's reply.
+        }
+    }
+
+    private void OnOutput(byte[] bytes)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _vt.VTWrite(bytes);
+        }
+
+        MarkDirty();
+        Changed?.Invoke();
+    }
+
+    private void MarkDirty() => Interlocked.Exchange(ref _dirty, 1);
+
+    private ScreenFrame Copy(RenderState state)
+    {
+        RenderStateColors colors = state.Colors;
+        var cells = new PaintedCell[Columns * Rows];
+        int used = 0;
+        var plain = new StringBuilder();
+        foreach (RenderStateRow row in state.Rows)
+        {
+            if (used >= cells.Length)
+            {
+                break;
+            }
+
+            int column = 0;
+            var line = new StringBuilder();
+            foreach (Cell cell in row.Cells)
+            {
+                if (used >= cells.Length)
+                {
+                    break;
+                }
+
+                PaintedCell painted = Paint(cell, colors);
+                cells[used++] = painted;
+                if (!painted.WideTail)
+                {
+                    line.Append(painted.Grapheme.Length == 0 ? " " : painted.Grapheme);
+                }
+
+                column++;
+                if (column >= Columns)
+                {
+                    break;
+                }
+            }
+
+            while (column < Columns && used < cells.Length)
+            {
+                cells[used++] = Blank(colors);
+                line.Append(' ');
+                column++;
+            }
+
+            if (plain.Length > 0)
+            {
+                plain.Append('\n');
+            }
+
+            plain.Append(line.ToString().TrimEnd());
+        }
+
+        while (used < cells.Length)
+        {
+            cells[used++] = Blank(colors);
+        }
+
+        return new ScreenFrame
+        {
+            Columns = Columns,
+            Rows = Rows,
+            Cells = cells,
+            PlainText = plain.ToString(),
+            CursorX = state.CursorViewportX,
+            CursorY = state.CursorViewportY,
+            CursorVisible = state.CursorVisible && state.CursorViewportHasValue,
+            CursorBlinking = state.CursorBlinking,
+        };
+    }
+
+    private static PaintedCell Paint(Cell cell, RenderStateColors colors)
+    {
+        bool tail = cell.Wide == CellWide.SpacerTail;
+        string grapheme = tail || string.IsNullOrEmpty(cell.Grapheme) ? "" : cell.Grapheme;
+        Style style = cell.Style;
+        (byte fr, byte fg, byte fb) = Bytes(cell.FgColor, colors.Foreground);
+        (byte br, byte bg, byte bb) = Bytes(cell.BgColor, colors.Background);
+        if (style.Inverse)
+        {
+            (fr, br) = (br, fr);
+            (fg, bg) = (bg, fg);
+            (fb, bb) = (bb, fb);
+        }
+
+        if (style.Invisible)
+        {
+            grapheme = "";
+        }
+
+        return new PaintedCell(
+            grapheme,
+            fr, fg, fb,
+            br, bg, bb,
+            style.Bold,
+            style.Italic,
+            style.Faint,
+            style.Underline != 0,
+            tail);
+    }
+
+    private static PaintedCell Blank(RenderStateColors colors)
+    {
+        (byte fr, byte fg, byte fb) = Bytes(null, colors.Foreground);
+        (byte br, byte bg, byte bb) = Bytes(null, colors.Background);
+        return new PaintedCell("", fr, fg, fb, br, bg, bb, false, false, false, false, false);
+    }
+
+    private static (byte R, byte G, byte B) Bytes(ColorRgb? color, ColorRgb fallback)
+    {
+        ColorRgb value = color ?? fallback;
+        return (value.R, value.G, value.B);
+    }
+
+    private static string Sanitize(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return "";
+        }
+
+        string oneLine = title.Replace('\r', ' ').Replace('\n', ' ').Replace('\0', ' ').Trim();
+        return oneLine.Length <= 60 ? oneLine : oneLine[..60];
+    }
+}
