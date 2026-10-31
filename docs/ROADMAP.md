@@ -3,8 +3,8 @@
 **Phased build plan for the session orchestrator described in [PLAN.md](./PLAN.md).**
 
 > Version: 0.1 (draft)
-> Status: Not started — `src/` is empty; planning docs only
-> Current phase: **Phase 0**
+> Status: Phase 0 complete
+> Current phase: **Phase 1** (not started)
 > Source of truth: [PLAN.md](./PLAN.md) wins on vision, non-goals, and v1 success. This file only sequences the work.
 
 Do not start a phase until the previous phase’s exit criterion is met and the Decision log below is updated. Non-goals in PLAN.md §1 are binding at every phase.
@@ -296,9 +296,9 @@ Fill these in the phase that owns them. Do not leave a default unspoken once tha
 
 | ID | Question | Owner | Resolution | Default if the spike is inconclusive |
 |----|----------|-------|------------|--------------------------------------|
-| D1 | `LibGhostty.Net` vs `DeBlasis.GhosttyVt` | Phase 0 | | Run both probes. Pick the one that loads and reads cells. If neither works, ANSI fallback for Phase 1. |
-| D2 | PTY from the binding vs a platform PTY wrapper | Phase 0 | | Platform wrapper when the binding PTY is missing or cannot spawn a shell. |
-| D3 | `net9.0` vs `net10.0` | Phase 0 | | `net9.0` unless Terminal.Gui v2 or the chosen binding requires `net10.0`. |
+| D1 | `LibGhostty.Net` vs `DeBlasis.GhosttyVt` | Phase 0 | DeBlasis.GhosttyVt 1.4.1 | Run both probes. Pick the one that loads and reads cells. If neither works, ANSI fallback for Phase 1. |
+| D2 | PTY from the binding vs a platform PTY wrapper | Phase 0 | Platform wrapper (`PtySession`) | Platform wrapper when the binding PTY is missing or cannot spawn a shell. |
+| D3 | `net9.0` vs `net10.0` | Phase 0 | net10.0 | `net9.0` unless Terminal.Gui v2 or the chosen binding requires `net10.0`. |
 | D4 | Scrollback lives in libghostty-vt or a mirrored buffer | Note in Phase 1, act in Phase 3 | | Use VT history if it exists. Do not mirror unless dogfood fails without it. |
 | D5 | Mouse in v1 | Phase 3 | | Not required. |
 | D6 | Default command for a new session | Phase 2 | | `$SHELL`, editable before start. Last-used command is a template concern, not the default. |
@@ -306,12 +306,24 @@ Fill these in the phase that owns them. Do not leave a default unspoken once tha
 
 ### Phase 0 record (fill when 0.4 is done)
 
-- Date:
-- Binding:
-- TFM:
-- PTY owner:
-- Go / fallback / stop:
+- Date: 2026-10-31
+- Binding: DeBlasis.GhosttyVt 1.4.1
+- TFM: net10.0
+- PTY owner: platform wrapper, `PtySession` (`posix_spawn`)
+- Go / fallback / stop: Go
 - Evidence (command output summary, not a paste of a whole build log):
+  - darwin arm64. DeBlasis probe, `dotnet run --project spikes/DeBlasisProbe`, exit 0. Fixture `plain` + SGR bold `BOLD`. `text: 'plain BOLD'`, `bold: 0000001111`, `result: PASS`. Assembly 1.4.1.0.
+  - LibGhostty.Net 1.0.2 with `LIBGHOSTTY_NATIVE_DIR` unset, exit 2. `FileNotFoundException: libghostty-vt.dylib was not found for runtime 'osx-arm64'` at `GhosttyRuntimeAssets.ResolveGhosttyLibrary`. PTY: `FileNotFoundException: libmuxer-pty.dylib was not found for runtime 'osx-arm64'`. The same build's `runtimes/osx-arm64/native` already holds both dylibs. Pointing `LIBGHOSTTY_NATIVE_DIR` at that directory: `vt-result: PASS`, `pty-result: PASS` (`pty-ok`).
+  - DeBlasis loads on a normal `dotnet run` and is the binding Phase 1 will call (`VTWrite`, `RenderState`, `Style.Bold`). It has no PTY, so the shell host stays in the app.
+  - `dotnet test tests/MyTui.Tests`: 6 passed, two runs. The PTY tests echo a byte through `/bin/cat` and reap a shell plus a background `sleep`.
+  - `my-tui` on an 80×24 pty, `TERM=xterm-256color`. The window showed Sessions (Shell, Claude Code, PI, Codex) beside Terminal. `echo phase0-echo` printed that line under the zsh prompt. Ctrl+Q exited 0. A before/after process list left no new shell. No `~/.config/my-tui/` directory was created.
+  - Terminal.Gui 2.5.0 publishes only `net10.0`. DeBlasis targets net9+ and ran on net10.0.
+
+Notes for Phase 1:
+
+- The TextView still shows raw ANSI. The live pane included the prompt's SGR and bracketed-paste bytes as text. The cell grid replaces that view.
+- Linux PTY numbers in `PtyNative` are the glibc values and have not been executed on Linux. macOS numbers were read from the headers on this machine.
+- Both probes stay in `spikes/` until Phase 1 folds DeBlasis into the app and removes the other probe.
 
 ### Fidelity gaps carried forward
 

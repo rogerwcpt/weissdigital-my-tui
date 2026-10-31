@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>my-tui</AssemblyName>
+    <RootNamespace>MyTui</RootNamespace>
+    <!-- LibraryImport stubs are generated as unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Terminal.Gui" Version="2.5.0" />
+  </ItemGroup>
+
+</Project>

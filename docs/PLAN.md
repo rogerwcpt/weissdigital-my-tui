@@ -3,7 +3,7 @@
 **A minimal, terminal-first session orchestrator for bring-your-own CLI agent harnesses.**
 
 > Version: 0.1 (draft)  
-> Status: Planning  
+> Status: In progress — Phase 0 complete  
 > Name: **my-tui**  
 > Binary: `my-tui`  
 > Target: Terminal.Gui + libghostty-vt
@@ -136,10 +136,10 @@ No cost tracking, no context-window meters, no agent-specific icons (keep it gen
 ## 5. Feature Breakdown (Phased)
 
 ### Phase 0 — Foundation (spike)
-- [ ] Minimal Terminal.Gui app with a vertical list and a single content area
-- [ ] Proof-of-concept: spawn a shell in a PTY and display raw output in a TextView (no full VT yet)
-- [ ] Confirm libghostty-vt .NET binding can be loaded and a simple VTWrite + cell read works
-- **Exit criterion**: can launch `bash` or `zsh` and see output, even if scrolling/colors are imperfect
+- [x] Minimal Terminal.Gui app with a vertical list and a single content area
+- [x] Proof-of-concept: spawn a shell in a PTY and display raw output in a TextView (no full VT yet)
+- [x] Confirm libghostty-vt .NET binding can be loaded and a simple VTWrite + cell read works
+- **Exit criterion**: can launch `bash` or `zsh` and see output, even if scrolling/colors are imperfect. Met 2026-10-31. Decision is in [ROADMAP.md](./ROADMAP.md).
 
 ### Phase 1 — Real terminal pane
 - [ ] Integrate libghostty-vt for correct VT state
@@ -225,7 +225,7 @@ Stored as `~/.config/my-tui/state.json`.
 
 ## 9. Open Questions
 
-- Exact .NET binding to prefer (`LibGhostty.Net` vs `DeBlasis.GhosttyVt`) — decide after Phase 0 spike.
+- Exact .NET binding to prefer (`LibGhostty.Net` vs `DeBlasis.GhosttyVt`) — decided in Phase 0: DeBlasis.GhosttyVt 1.4.1. See [ROADMAP.md](./ROADMAP.md).
 - Whether to support a “quick open in `$EDITOR`” action from the Files pane (recommended: yes, optional).
 - Default command when creating a new session (shell vs last-used agent command).
 - Whether scrollback should live entirely inside libghostty-vt or be mirrored into a Terminal.Gui buffer.
@@ -245,8 +245,4 @@ Stored as `~/.config/my-tui/state.json`.
 
 ## Next Step
 
-Start Phase 0 spike in a new repository named **my-tui**. The first commit should contain:
-
-1. This plan (`PLAN.md`)
-2. A minimal Terminal.Gui skeleton with a session list
-3. A note in the README pointing to the plan and the explicit non-goals
+Phase 0 is complete. Phase 1 has not started. The build order and the D1–D3 decision are in [ROADMAP.md](./ROADMAP.md).

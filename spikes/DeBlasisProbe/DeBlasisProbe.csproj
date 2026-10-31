@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DeBlasisProbe</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Phase 0 probe. Not referenced by my-tui. Fold or delete at the start of Phase 1. -->
+  <ItemGroup>
+    <PackageReference Include="DeBlasis.GhosttyVt" Version="1.4.1" />
+  </ItemGroup>
+
+</Project>
