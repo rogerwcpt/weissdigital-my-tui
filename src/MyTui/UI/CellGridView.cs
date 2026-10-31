@@ -15,10 +15,11 @@ internal sealed class CellGridView : View
     private TerminalSession? _session;
     private bool _cursorOn = true;
 
-    internal CellGridView(Action onNew, Action onPanes)
+    internal CellGridView(Func<Key, bool> chords, Action start, Action close)
     {
-        OnNew = onNew;
-        OnPanes = onPanes;
+        _chords = chords;
+        _start = start;
+        _close = close;
         CanFocus = true;
         Width = Dim.Fill();
         Height = Dim.Fill();
@@ -26,9 +27,14 @@ internal sealed class CellGridView : View
 
     internal bool CursorBlinking { get; private set; }
 
-    private Action OnNew { get; }
+    /// <summary>Resize the PTY only while the Terminal tab is the one on screen.</summary>
+    internal bool Live { get; set; } = true;
 
-    private Action OnPanes { get; }
+    private Func<Key, bool> _chords { get; }
+
+    private Action _start { get; }
+
+    private Action _close { get; }
 
     internal TerminalSession? Session
     {
@@ -57,7 +63,7 @@ internal sealed class CellGridView : View
     protected override void OnViewportChanged(DrawEventArgs args)
     {
         base.OnViewportChanged(args);
-        if (Viewport.Width > 1 && Viewport.Height > 1)
+        if (Live && Viewport.Width > 1 && Viewport.Height > 1)
         {
             _session?.Resize(Viewport.Width, Viewport.Height);
         }
@@ -70,27 +76,38 @@ internal sealed class CellGridView : View
             return false;
         }
 
-        if (key == Key.N.WithCtrl && !key.IsAlt && !key.IsShift)
-        {
-            OnNew();
-            return true;
-        }
-
-        if (key == Key.O.WithCtrl && !key.IsAlt && !key.IsShift)
-        {
-            OnPanes();
-            return true;
-        }
-
-        if (_session is null || !_session.IsRunning)
+        if (_chords(key))
         {
             return true;
         }
 
-        byte[]? encoded = _session.Encode(key);
+        bool idle = _session is null || _session.HasExited || !_session.IsRunning;
+        if (idle && key == Key.Enter)
+        {
+            _start();
+            return true;
+        }
+
+        if (idle && key == Key.Delete && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+        {
+            _close();
+            return true;
+        }
+
+        if (idle)
+        {
+            return true;
+        }
+
+        if (_session is not TerminalSession session)
+        {
+            return true;
+        }
+
+        byte[]? encoded = session.Encode(key);
         if (encoded is { Length: > 0 })
         {
-            _session.Write(encoded);
+            session.Write(encoded);
         }
 
         return true;

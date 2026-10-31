@@ -72,6 +72,21 @@ internal static partial class PtyNative
     [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_adddup2")]
     internal static partial int SpawnActionsAddDup2(IntPtr actions, int fd, int newFd);
 
+    /// <summary>
+    /// macOS 26 replaced addchdir_np with addchdir. Linux keeps the glibc _np name.
+    /// The unused import is not called, so the other platform does not have to export it.
+    /// </summary>
+    internal static int AddChdir(IntPtr actions, string path) =>
+        OperatingSystem.IsMacOS()
+            ? SpawnActionsAddChdir(actions, path)
+            : SpawnActionsAddChdirNp(actions, path);
+
+    [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_addchdir", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int SpawnActionsAddChdir(IntPtr actions, string path);
+
+    [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_addchdir_np", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int SpawnActionsAddChdirNp(IntPtr actions, string path);
+
     [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_destroy")]
     internal static partial int SpawnActionsDestroy(IntPtr actions);
 

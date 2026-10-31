@@ -25,6 +25,8 @@ internal sealed class PtySession : IDisposable
 
     internal int Pid => _pid;
 
+    internal int? ExitCode { get; private set; }
+
     internal event Action<byte[]>? Output;
 
     internal static PtySession Start(
@@ -32,7 +34,8 @@ internal sealed class PtySession : IDisposable
         IReadOnlyList<string> arguments,
         int columns,
         int rows,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null,
+        string? workingDirectory = null)
     {
         if (!OperatingSystem.IsMacOS() && !OperatingSystem.IsLinux())
         {
@@ -87,6 +90,11 @@ internal sealed class PtySession : IDisposable
 
             string[] argv = arguments.Count == 0 ? [file] : arguments.ToArray();
             using var actions = new SpawnActions();
+            if (!string.IsNullOrWhiteSpace(workingDirectory))
+            {
+                actions.Chdir(workingDirectory);
+            }
+
             actions.Open(0, slaveName);
             actions.Dup(0, 1);
             actions.Dup(0, 2);
@@ -225,9 +233,14 @@ internal sealed class PtySession : IDisposable
             return true;
         }
 
-        int waited = PtyNative.WaitPid(_pid, out _, PtyNative.WaitNoHang);
+        int waited = PtyNative.WaitPid(_pid, out int status, PtyNative.WaitNoHang);
         if (waited == _pid || (waited < 0 && Marshal.GetLastPInvokeError() == PtyNative.Echild))
         {
+            if (waited == _pid)
+            {
+                Remember(status);
+            }
+
             Interlocked.Exchange(ref _reaped, 1);
             return true;
         }
@@ -378,9 +391,14 @@ internal sealed class PtySession : IDisposable
         long deadline = Environment.TickCount64 + 500;
         while (Environment.TickCount64 < deadline)
         {
-            int waited = PtyNative.WaitPid(_pid, out _, PtyNative.WaitNoHang);
+            int waited = PtyNative.WaitPid(_pid, out int status, PtyNative.WaitNoHang);
             if (waited == _pid || (waited < 0 && Marshal.GetLastPInvokeError() == PtyNative.Echild))
             {
+                if (waited == _pid)
+                {
+                    Remember(status);
+                }
+
                 return;
             }
 
@@ -395,9 +413,10 @@ internal sealed class PtySession : IDisposable
         Signal(PtyNative.SigKill);
         while (true)
         {
-            int waited = PtyNative.WaitPid(_pid, out _, 0);
+            int waited = PtyNative.WaitPid(_pid, out int status, 0);
             if (waited == _pid)
             {
+                Remember(status);
                 return;
             }
 
@@ -477,6 +496,9 @@ internal sealed class PtySession : IDisposable
         internal void Open(int fd, string path) =>
             ThrowIf(PtyNative.SpawnActionsAddOpen(Handle, fd, path, 2, 0), "posix_spawn_file_actions_addopen");
 
+        internal void Chdir(string path) =>
+            ThrowIf(PtyNative.AddChdir(Handle, path), "posix_spawn_file_actions_addchdir");
+
         internal void Dup(int fd, int newFd) =>
             ThrowIf(PtyNative.SpawnActionsAddDup2(Handle, fd, newFd), "posix_spawn_file_actions_adddup2");
 
@@ -526,6 +548,19 @@ internal sealed class PtySession : IDisposable
         }
 
         return pointer;
+    }
+
+    private void Remember(int status) => ExitCode ??= DecodeWaitStatus(status);
+
+    internal static int DecodeWaitStatus(int status)
+    {
+        int signal = status & 0x7f;
+        if (signal == 0 || signal == 0x7f)
+        {
+            return (status >> 8) & 0xff;
+        }
+
+        return 128 + signal;
     }
 
     private static void ThrowIf(int error, string call)

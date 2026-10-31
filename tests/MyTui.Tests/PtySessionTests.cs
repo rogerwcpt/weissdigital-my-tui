@@ -56,6 +56,44 @@ public class PtySessionTests
         await Task.CompletedTask;
     }
 
+    [UnixFact(Timeout = 15000)]
+    public async Task ChildStartsInTheRequestedDirectory()
+    {
+        string directory = Directory.CreateTempSubdirectory("my-tui-cwd").FullName;
+        PtySession? session = null;
+        try
+        {
+            session = PtySession.Start("/bin/pwd", ["/bin/pwd"], 80, 24, CleanEnv(), directory);
+            string text = Capture(session, value => value.Contains(Path.GetFileName(directory)), TimeSpan.FromSeconds(3));
+            Assert.Contains(Path.GetFileName(directory), text);
+        }
+        finally
+        {
+            session?.Dispose();
+            Directory.Delete(directory, recursive: true);
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [UnixFact(Timeout = 15000)]
+    public async Task ExitCodeIsTheChildStatus()
+    {
+        PtySession? session = null;
+        try
+        {
+            session = PtySession.Start("/bin/sh", ["/bin/sh", "-c", "exit 7"], 80, 24, CleanEnv());
+            bool exited = WaitUntil(() => session.PollExited() && session.ExitCode == 7, TimeSpan.FromSeconds(3));
+            Assert.True(exited, $"exit {session.ExitCode}");
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
     private static string Capture(PtySession session, Func<string, bool> ready, TimeSpan timeout, Action? afterStart = null)
     {
         var got = new StringBuilder();

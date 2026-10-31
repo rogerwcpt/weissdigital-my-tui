@@ -3,8 +3,8 @@
 **Phased build plan for the session orchestrator described in [PLAN.md](./PLAN.md).**
 
 > Version: 0.1 (draft)
-> Status: Phase 1 complete
-> Current phase: **Phase 2** (not started)
+> Status: Phase 2 complete
+> Current phase: **Phase 3** (not started)
 > Source of truth: [PLAN.md](./PLAN.md) wins on vision, non-goals, and v1 success. This file only sequences the work.
 
 Do not start a phase until the previous phase’s exit criterion is met and the Decision log below is updated. Non-goals in PLAN.md §1 are binding at every phase.
@@ -301,8 +301,8 @@ Fill these in the phase that owns them. Do not leave a default unspoken once tha
 | D3 | `net9.0` vs `net10.0` | Phase 0 | net10.0 | `net9.0` unless Terminal.Gui v2 or the chosen binding requires `net10.0`. |
 | D4 | Scrollback lives in libghostty-vt or a mirrored buffer | Note in Phase 1, act in Phase 3 | VT history. `MaxScrollbackLines` is 10_000. No mirrored buffer and no scrollback UI. | Use VT history if it exists. Do not mirror unless dogfood fails without it. |
 | D5 | Mouse in v1 | Phase 3 | Phase 1 finding: `MouseEncoder` and the mouse modes are in DeBlasis 1.4.1. Nothing is wired. Whether v1 gets mouse stays with Phase 3. | Not required. |
-| D6 | Default command for a new session | Phase 2 | | `$SHELL`, editable before start. Last-used command is a template concern, not the default. |
-| D7 | Open in `$EDITOR` from Files | Phase 2, else Phase 3 | | Yes, if it is spawn-and-return. Otherwise defer; do not block Phase 2. |
+| D6 | Default command for a new session | Phase 2 | `$SHELL`, selected in the new-session dialog so it can be replaced before Start. Last-used command stays a Phase 3 template. | `$SHELL`, editable before start. Last-used command is a template concern, not the default. |
+| D7 | Open in `$EDITOR` from Files | Phase 2, else Phase 3 | Deferred. Terminal.Gui owns the host tty, so a real `$EDITOR` would mean suspending the TUI and restoring it. That is past spawn-and-return. No editor is embedded. | Yes, if it is spawn-and-return. Otherwise defer; do not block Phase 2. |
 
 ### Phase 0 record (fill when 0.4 is done)
 
@@ -336,6 +336,19 @@ Notes for Phase 1:
   - `htop` is not installed (`/opt/homebrew/bin/htop` and `/usr/bin/htop` are absent), so that command was not run. vim and pi are the full-screen check that was available.
 - Apple arm64 passes `ioctl`’s extra argument on the stack. `Native/pty_ioctl.c` is the non-variadic wrapper the .NET call goes through. The child’s open of the slave clears a size set before `posix_spawn`, so the size is written again afterwards and read back.
 - With the kitty keyboard protocol on, the encoder answered Ctrl+D with `d` or with no bytes. Ctrl+A through Ctrl+Z fall back to the classic control byte in that case.
+
+### Phase 2 record
+
+- Date: 2026-10-31
+- Store: `~/.config/my-tui/state.json`. Order, focus, and each session’s tab are written on change. Pid, exit code, and the inherited environment are not. A bad file is moved to `state.json.bad-<timestamp>` and the app opens empty.
+- Sessions are not started on launch. Enter, or Start in the new-session dialog, starts one. The dialog’s command field opens on `$SHELL` with the text selected.
+- Tabs are Terminal, Files, and Preview. The file tree is the session cwd. `..` is not offered, and a symlink whose target is outside that cwd is not listed. Preview uses Terminal.Gui’s Markdown view for `.md` (lists become bullets, links are followed in the text). Other text is plain. A NUL in the first 256 KB is refused with “Binary file. No preview.”
+- D6 closed. D7 deferred.
+- Evidence:
+  - `dotnet test tests/MyTui.Tests`: 27 passed. Adds the state round-trip, the corrupt-file backup, cwd confinement (including a symlink out of the root), a child whose `pwd` is the requested directory, an exit status of 7, and the preview rules for Markdown, plain text, and a binary refusal.
+  - On a 40×120 pty: three zsh sessions (`echo MARK-A`, `MARK-B`, `MARK-C`) and `pi --no-session --offline`. Each one opened `README.md` from Files and Preview showed `Non-goals` plus bullet items. Switching back, each mark was still on its terminal and pi’s splash was still up. Ctrl+Q exited 0.
+  - The state file had the four commands (`/bin/zsh` three times, `pi` with `--no-session` and `--offline`), empty `env` objects, and no pid or exit code. An inherited `MYTUI_DO_NOT_SAVE` was absent. Relaunch showed the four sessions as stopped, with no shell prompt, and Ctrl+Q exited 0.
+  - Ctrl+E renamed a running shell to `renamed`. The pid did not change. Relaunch showed `renamed · stopped` and did not start a shell.
 
 ### Fidelity gaps carried forward
 

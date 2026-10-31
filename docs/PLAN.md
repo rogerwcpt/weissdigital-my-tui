@@ -3,7 +3,7 @@
 **A minimal, terminal-first session orchestrator for bring-your-own CLI agent harnesses.**
 
 > Version: 0.1 (draft)  
-> Status: In progress — Phase 1 complete  
+> Status: In progress — Phase 2 complete  
 > Name: **my-tui**  
 > Binary: `my-tui`  
 > Target: Terminal.Gui + libghostty-vt
@@ -150,12 +150,12 @@ No cost tracking, no context-window meters, no agent-specific icons (keep it gen
 - **Exit criterion**: can run `vim`, `htop`, and a CLI agent (Claude Code / PI) with acceptable fidelity. Met 2026-10-31 for vim and pi. `htop` is not installed on this machine, so it was not run. Record is in [ROADMAP.md](./ROADMAP.md).
 
 ### Phase 2 — Session model & tabs
-- [ ] Persistent session list (name, cwd, command)
-- [ ] Per-session tabs: Terminal / Files / Preview
-- [ ] Simple file tree (no git status, no icons beyond type)
-- [ ] Markdown preview using Terminal.Gui Markdown view
-- [ ] Switch sessions without losing terminal state
-- **Exit criterion**: can supervise 3–4 agent sessions and flip to a Markdown file in any of them
+- [x] Persistent session list (name, cwd, command)
+- [x] Per-session tabs: Terminal / Files / Preview
+- [x] Simple file tree (no git status, no icons beyond type)
+- [x] Markdown preview using Terminal.Gui Markdown view
+- [x] Switch sessions without losing terminal state
+- **Exit criterion**: can supervise 3–4 agent sessions and flip to a Markdown file in any of them. Met 2026-10-31. Record is in [ROADMAP.md](./ROADMAP.md).
 
 ### Phase 3 — Polish & usability
 - [ ] Themes that respect `NO_COLOR` and host terminal
@@ -226,8 +226,8 @@ Stored as `~/.config/my-tui/state.json`.
 ## 9. Open Questions
 
 - Exact .NET binding to prefer (`LibGhostty.Net` vs `DeBlasis.GhosttyVt`) — decided in Phase 0: DeBlasis.GhosttyVt 1.4.1. See [ROADMAP.md](./ROADMAP.md).
-- Whether to support a “quick open in `$EDITOR`” action from the Files pane (recommended: yes, optional).
-- Default command when creating a new session (shell vs last-used agent command).
+- Whether to support a “quick open in `$EDITOR`” action from the Files pane — deferred in Phase 2 (D7). Suspending the TUI for a host editor is Phase 3 if it is still wanted.
+- Default command when creating a new session — decided in Phase 2 (D6): `$SHELL`, editable before start.
 - Whether scrollback should live entirely inside libghostty-vt or be mirrored into a Terminal.Gui buffer.
 - Mouse support priority for v1 (nice-to-have vs required).
 
@@ -245,4 +245,4 @@ Stored as `~/.config/my-tui/state.json`.
 
 ## Next Step
 
-Phase 1 is complete. Phase 2 has not started. The build order and the D1–D5 notes are in [ROADMAP.md](./ROADMAP.md).
+Phase 2 is complete. Phase 3 has not started. The build order and the decision log are in [ROADMAP.md](./ROADMAP.md).

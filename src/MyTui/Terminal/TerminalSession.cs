@@ -37,6 +37,8 @@ internal sealed class TerminalSession : IDisposable
 
     internal int Pid => _pty?.Pid ?? 0;
 
+    internal int? ExitCode => _pty?.ExitCode;
+
     internal bool IsRunning => _pty is not null && PtySession.IsRunning(_pty.Pid);
 
     internal bool HasExited => _pty is null || _pty.PollExited();
@@ -59,12 +61,13 @@ internal sealed class TerminalSession : IDisposable
         int columns,
         int rows,
         string? name = null,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null,
+        string? workingDirectory = null)
     {
         var session = new TerminalSession(name ?? Path.GetFileName(file), columns, rows);
         try
         {
-            session._pty = PtySession.Start(file, arguments, session.Columns, session.Rows, environment);
+            session._pty = PtySession.Start(file, arguments, session.Columns, session.Rows, environment, workingDirectory);
             session._pty.Output += session.OnOutput;
             session._pty.StartReading();
             return session;

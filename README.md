@@ -19,4 +19,4 @@ The plan is in [docs/PLAN.md](docs/PLAN.md). The build order is in [docs/ROADMAP
 dotnet run --project src/MyTui
 ```
 
-Ctrl+N starts a shell, Ctrl+O moves between the session list and the terminal, Delete closes the selected session, and Ctrl+Q quits. The first session is `$SHELL`.
+Ctrl+N creates a session. The command defaults to `$SHELL` and can be edited before it starts. Ctrl+O moves between the session list and the open tab, Ctrl+T cycles Terminal, Files, and Preview, Ctrl+E edits the session, and Delete closes it. Enter starts a stopped session. Ctrl+R refreshes Files. Alt+Up and Alt+Down reorder the list. Ctrl+Q quits. Sessions are restored from `~/.config/my-tui/state.json` and are not started until Enter.
