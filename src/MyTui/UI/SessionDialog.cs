@@ -77,6 +77,7 @@ internal static class SessionDialog
 
         dialog.AddButton(new Button { Text = "Cancel" });
         dialog.AddButton(new Button { Text = accept });
+        CloseDialog.CancelOnEsc(dialog, app);
         dialog.Initialized += (_, _) =>
         {
             TextField focused = accept == "Save" ? name.Input : command.Input;

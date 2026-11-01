@@ -209,6 +209,111 @@ public class TerminalSessionTests
         await Task.CompletedTask;
     }
 
+    [UnixFact(Timeout = 15000)]
+    public async Task Scroll_MovesTheVtViewport()
+    {
+        TerminalSession? session = null;
+        try
+        {
+            session = TerminalSession.Start(
+                "/bin/sh",
+                ["/bin/sh", "-c", "i=0; while [ \"$i\" -lt 40 ]; do printf 'L%02d\\n' \"$i\"; i=$((i+1)); done; sleep 20"],
+                80,
+                24,
+                environment: CleanEnv());
+            WaitFor(session, value => value.Contains("L39"));
+            Assert.True(session.ScrollOffset > 0);
+            session.ScrollToTop();
+            ScreenFrame top = WaitFor(session, value => value.Contains("L00"));
+            Assert.Equal(0, session.ScrollOffset);
+            Assert.DoesNotContain("L39", top.PlainText);
+            int moved = session.ScrollOffset;
+            session.ScrollBy(4);
+            Assert.Equal(moved + 4, session.ScrollOffset);
+            session.ScrollToBottom();
+            WaitFor(session, value => value.Contains("L39"));
+            Assert.True(session.ScrollOffset > 0);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [UnixFact(Timeout = 15000)]
+    public async Task Paste_FollowsTheChildBracketedMode()
+    {
+        byte[] plain = PasteInput.Encode("hi\n"u8, false);
+        Assert.Equal("hi\r"u8.ToArray(), plain);
+        byte[] wrapped = PasteInput.Encode("hi\n"u8, true);
+        Assert.Equal("\u001b[200~hi\n\u001b[201~"u8.ToArray(), wrapped);
+
+        string directory = Directory.CreateTempSubdirectory("my-tui-paste").FullName;
+        try
+        {
+            await ExpectPaste(directory, "plain", bracketed: false, "hi\r");
+            await ExpectPaste(directory, "bracket", bracketed: true, "\u001b[200~hi\n\u001b[201~");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static async Task ExpectPaste(string directory, string name, bool bracketed, string expected)
+    {
+        string file = Path.Combine(directory, name);
+        string mode = bracketed ? "printf '\\033[?2004h'; " : "";
+        string script = mode + "stty raw -echo; printf 'READY\\n'; dd bs=1 count=" + expected.Length + " of='" + file + "'";
+        TerminalSession? session = null;
+        try
+        {
+            session = TerminalSession.Start("/bin/sh", ["/bin/sh", "-c", script], 80, 24, environment: CleanEnv());
+            WaitFor(session, value => value.Contains("READY"));
+            if (bracketed)
+            {
+                long deadline = Environment.TickCount64 + 2000;
+                while (Environment.TickCount64 < deadline && !session.BracketedPaste)
+                {
+                    Thread.Sleep(20);
+                }
+
+                Assert.True(session.BracketedPaste);
+            }
+
+            session.Paste("hi\n");
+            long fileDeadline = Environment.TickCount64 + 3000;
+            while (Environment.TickCount64 < fileDeadline && !File.Exists(file))
+            {
+                Thread.Sleep(20);
+            }
+
+            Assert.True(File.Exists(file), session.Capture().PlainText);
+            string body = "";
+            long readDeadline = Environment.TickCount64 + 2000;
+            while (Environment.TickCount64 < readDeadline)
+            {
+                body = File.ReadAllText(file);
+                if (body == expected)
+                {
+                    break;
+                }
+
+                Thread.Sleep(20);
+            }
+
+            Assert.Equal(expected, body);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
     private static PaintedCell Cell(ScreenFrame frame, string grapheme) =>
         frame.Cells.First(cell => cell.Grapheme == grapheme);
 

@@ -14,6 +14,11 @@ internal sealed class CellGridView : View
 {
     private TerminalSession? _session;
     private bool _cursorOn = true;
+    private PaintedCell[] _cache = [];
+    private bool _forceFull = true;
+    private bool _cachedCursor;
+    private int _cachedCursorX = -1;
+    private int _cachedCursorY = -1;
 
     internal CellGridView(Func<Key, bool> chords, Action start, Action close)
     {
@@ -41,9 +46,21 @@ internal sealed class CellGridView : View
         get => _session;
         set
         {
+            if (!ReferenceEquals(_session, value))
+            {
+                _forceFull = true;
+            }
+
             _session = value;
             SetNeedsDraw();
         }
+    }
+
+    /// <summary>Next paint writes every cell. Used after a dialog has covered the grid.</summary>
+    internal void Repaint()
+    {
+        _forceFull = true;
+        SetNeedsDraw();
     }
 
     internal void Blink(bool cursorOn)
@@ -63,11 +80,28 @@ internal sealed class CellGridView : View
     protected override void OnViewportChanged(DrawEventArgs args)
     {
         base.OnViewportChanged(args);
+        _forceFull = true;
         if (Live && Viewport.Width > 1 && Viewport.Height > 1)
         {
             _session?.Resize(Viewport.Width, Viewport.Height);
         }
     }
+
+    protected override void OnVisibleChanged()
+    {
+        base.OnVisibleChanged();
+        if (Visible)
+        {
+            _forceFull = true;
+        }
+    }
+
+    /// <summary>
+    /// The framework would otherwise fill every cell before we draw. We own the whole grid,
+    /// so a fill plus a full rewrite is two paints. Returning true keeps the previous cells
+    /// and <see cref="OnDrawingContent"/> writes only what changed.
+    /// </summary>
+    protected override bool OnClearingViewport() => true;
 
     protected override bool OnKeyDown(Key key)
     {
@@ -81,6 +115,34 @@ internal sealed class CellGridView : View
             return true;
         }
 
+        if (_session is not null && key.IsShift && !key.IsCtrl && !key.IsAlt)
+        {
+            int page = Math.Max(1, _session.Rows - 1);
+            if (key == Key.PageUp.WithShift)
+            {
+                _session.ScrollBy(-page);
+                return true;
+            }
+
+            if (key == Key.PageDown.WithShift)
+            {
+                _session.ScrollBy(page);
+                return true;
+            }
+
+            if (key == Key.Home.WithShift)
+            {
+                _session.ScrollToTop();
+                return true;
+            }
+
+            if (key == Key.End.WithShift)
+            {
+                _session.ScrollToBottom();
+                return true;
+            }
+        }
+
         bool idle = _session is null || _session.HasExited || !_session.IsRunning;
         if (idle && key == Key.Enter)
         {
@@ -88,7 +150,7 @@ internal sealed class CellGridView : View
             return true;
         }
 
-        if (idle && key == Key.Delete && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+        if (idle && SessionScreen.IsCloseKey(key))
         {
             _close();
             return true;
@@ -104,6 +166,7 @@ internal sealed class CellGridView : View
             return true;
         }
 
+        session.RevealBottom();
         byte[]? encoded = session.Encode(key);
         if (encoded is { Length: > 0 })
         {
@@ -113,9 +176,19 @@ internal sealed class CellGridView : View
         return true;
     }
 
+    protected override bool OnPaste(string text)
+    {
+        if (_session is not TerminalSession session || session.HasExited || !session.IsRunning || text.Length == 0)
+        {
+            return false;
+        }
+
+        session.Paste(text);
+        return true;
+    }
+
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        base.OnDrawingContent(context);
         int width = Viewport.Width;
         int height = Viewport.Height;
         if (width < 1 || height < 1)
@@ -123,25 +196,81 @@ internal sealed class CellGridView : View
             return true;
         }
 
-        ScreenFrame? frame = _session?.Capture();
+        ScreenFrame? frame = _session?.CaptureForDraw();
         CursorBlinking = frame?.CursorBlinking ?? false;
         PaintedCell blank = frame?.Cell(0, 0) ?? PaintedCell.Blank;
         bool showCursor = HasFocus && frame is { CursorVisible: true } && (!CursorBlinking || _cursorOn);
+        bool color = HostTheme.ColorEnabled;
+        int count = width * height;
+        bool full = _forceFull || _cache.Length != count;
+        if (full)
+        {
+            _cache = new PaintedCell[count];
+        }
+
+        TuiAttribute? ink = null;
+        int cursorX = frame?.CursorX ?? -1;
+        int cursorY = frame?.CursorY ?? -1;
         for (int row = 0; row < height; row++)
         {
             for (int column = 0; column < width; column++)
             {
                 PaintedCell cell = frame?.Cell(column, row) ?? blank;
-                bool cursor = showCursor && frame is not null && column == frame.CursorX && row == frame.CursorY;
-                DrawCell(column, row, cell, cursor);
+                bool cursor = showCursor && column == cursorX && row == cursorY;
+                int index = (row * width) + column;
+                bool wasCursor = _cachedCursor && column == _cachedCursorX && row == _cachedCursorY;
+                if (!full && _cache[index].Equals(cell) && cursor == wasCursor)
+                {
+                    continue;
+                }
+
+                _cache[index] = cell;
+                TuiAttribute attribute = AttributeFor(cell, cursor, color);
+                if (ink is null || !ink.Value.Equals(attribute))
+                {
+                    SetAttribute(attribute);
+                    ink = attribute;
+                }
+
+                AddRune(column, row, Glyph(cell));
             }
         }
 
+        _forceFull = false;
+        _cachedCursor = showCursor;
+        _cachedCursorX = cursorX;
+        _cachedCursorY = cursorY;
         return true;
     }
 
-    private void DrawCell(int column, int row, PaintedCell cell, bool cursor)
+    private static TuiAttribute AttributeFor(PaintedCell cell, bool cursor, bool color)
     {
+        if (!color)
+        {
+            TextStyle plain = TextStyle.None;
+            if (cell.Bold)
+            {
+                plain |= TextStyle.Bold;
+            }
+
+            if (cell.Italic)
+            {
+                plain |= TextStyle.Italic;
+            }
+
+            if (cell.Underline)
+            {
+                plain |= TextStyle.Underline;
+            }
+
+            if (cursor)
+            {
+                plain |= TextStyle.Reverse;
+            }
+
+            return new TuiAttribute(Color.None, Color.None, plain);
+        }
+
         byte fr = cell.ForegroundRed;
         byte fg = cell.ForegroundGreen;
         byte fb = cell.ForegroundBlue;
@@ -176,10 +305,9 @@ internal sealed class CellGridView : View
             style |= TextStyle.Underline;
         }
 
-        SetAttribute(new TuiAttribute(new Color(fr, fg, fb), new Color(br, bg, bb), style));
-        Rune rune = cell.Grapheme.Length == 0
-            ? new Rune(' ')
-            : cell.Grapheme.EnumerateRunes().First();
-        AddRune(column, row, rune);
+        return new TuiAttribute(new Color(fr, fg, fb), new Color(br, bg, bb), style);
     }
+
+    private static Rune Glyph(PaintedCell cell) =>
+        cell.Grapheme.Length == 0 ? new Rune(' ') : Rune.GetRuneAt(cell.Grapheme, 0);
 }

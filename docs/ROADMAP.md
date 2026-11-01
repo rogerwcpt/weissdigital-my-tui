@@ -3,8 +3,8 @@
 **Phased build plan for the session orchestrator described in [PLAN.md](./PLAN.md).**
 
 > Version: 0.1 (draft)
-> Status: Phase 2 complete
-> Current phase: **Phase 3** (not started)
+> Status: Phase 3 built, not complete
+> Current phase: **Phase 3** (v1 gate item 6 is open)
 > Source of truth: [PLAN.md](./PLAN.md) wins on vision, non-goals, and v1 success. This file only sequences the work.
 
 Do not start a phase until the previous phase’s exit criterion is met and the Decision log below is updated. Non-goals in PLAN.md §1 are binding at every phase.
@@ -271,6 +271,31 @@ All of PLAN.md §8:
 
 **Phase done when** the gate is met. Tag v1 only after item 6.
 
+### Phase 3 record
+
+- Date: 2026-11-01
+- Not complete. Items 1–5 of the gate were observed. Item 6, a week of real use, was not. v1 is not tagged.
+- Keys: F1 lists the existing chords. Delete on a running session asks first. Esc cancels that dialog. Enter on Close stops it. Stopped and exited sessions still close immediately.
+- UI follow-up, 2026-11-01. Clicking Files switched the tab and left the tree empty, because the directory was read only on Ctrl+T. Any change onto Files reads it, and showing a session reads it too. Preview is a right-hand panel (Ctrl+P), so the selected file stays visible on the Terminal tab. The Mac Delete key sends Backspace; that closes a session from the list, Files, the preview, and an idle terminal. Inside a running terminal it still deletes a character. Forward delete closes the same way. A running session still asks first.
+- `NO_COLOR` (and `TERM=dumb`) leaves the chrome and the cell grid on the terminal default. A pty drive with `NO_COLOR=1` drew a red `printf` and the host stream had no `38;2`, `48;2`, `38;5`, or `31m`. It did emit `39m` and `49m`, which select the terminal’s own colors.
+- Templates are `~/.config/my-tui/templates.json`, beside `state.json`. F2 applies one template into the new-session dialog. Saving stores the focused session. A drive applied `marked` (`/bin/zsh`, cwd `/tmp`, env `MYTUI_TEMPLATE=phase3`), cancelled, then started that one session. The state file had that single session and that env entry, and no pid.
+- Scroll: Shift+Home showed `LINE0` after 80 echoed lines. Shift+End returned to `LINE79` and the prompt. The history is the VT’s. Typing or pasting moves back to the bottom.
+- Paste: the managed `Paste.Encode` faults (the flag is marshalled as a 4-byte BOOL). The app calls `ghostty_paste_encode` with a one-byte flag. A child that sent `CSI ? 2004 h` received `ESC[200~hi\nESC[201~`. Without that mode the same paste is `hi\r`. A host bracketed paste of `PASTE-MARK` showed up in the shell.
+- Publish, both self-contained folders, not a single file. The macOS ioctl shim has to stay next to `my-tui`. Globalization is invariant, so the Linux folder does not need libicu. The VT package ships `linux-x64`, so that is the Linux RID.
+  - macOS arm64: `src/MyTui/bin/Release/net10.0/osx-arm64/publish/my-tui`, ad-hoc signed, with `libmytui_pty.dylib` beside it. Driven outside `dotnet run`: the session list came up, a shell started, Esc left the close dialog, Ctrl+Q exited 0.
+  - linux-x64: `src/MyTui/bin/Release/net10.0/linux-x64/publish/my-tui`. Colima was started for this check and stopped afterwards. Debian bookworm slim, `linux/amd64`, showed the session list. Ctrl+Q exited 0.
+- Tests: `dotnet test tests/MyTui.Tests` — 31 passed. Adds the template round-trip and the corrupt-template park, VT scroll, and paste bytes.
+- D7 stays deferred. No editor was embedded. No Homebrew formula.
+
+### v1 gate, dated
+
+1. Met 2026-10-31. A new session runs the command typed in the dialog.
+2. Met 2026-10-31. Four sessions (three shells and pi) kept their screens across switches.
+3. Met 2026-10-31. Files → `README.md` → Preview showed the Markdown.
+4. Met 2026-10-31. No login, upgrade, git, or worktree UI.
+5. Met 2026-11-01. The macOS publish folder and the linux-x64 publish folder both started and showed the session list.
+6. Not met. A week of real agent work has not happened. Do not tag v1.
+
 ---
 
 ## Later (not scheduled)
@@ -299,8 +324,8 @@ Fill these in the phase that owns them. Do not leave a default unspoken once tha
 | D1 | `LibGhostty.Net` vs `DeBlasis.GhosttyVt` | Phase 0 | DeBlasis.GhosttyVt 1.4.1 | Run both probes. Pick the one that loads and reads cells. If neither works, ANSI fallback for Phase 1. |
 | D2 | PTY from the binding vs a platform PTY wrapper | Phase 0 | Platform wrapper (`PtySession`) | Platform wrapper when the binding PTY is missing or cannot spawn a shell. |
 | D3 | `net9.0` vs `net10.0` | Phase 0 | net10.0 | `net9.0` unless Terminal.Gui v2 or the chosen binding requires `net10.0`. |
-| D4 | Scrollback lives in libghostty-vt or a mirrored buffer | Note in Phase 1, act in Phase 3 | VT history. `MaxScrollbackLines` is 10_000. No mirrored buffer and no scrollback UI. | Use VT history if it exists. Do not mirror unless dogfood fails without it. |
-| D5 | Mouse in v1 | Phase 3 | Phase 1 finding: `MouseEncoder` and the mouse modes are in DeBlasis 1.4.1. Nothing is wired. Whether v1 gets mouse stays with Phase 3. | Not required. |
+| D4 | Scrollback lives in libghostty-vt or a mirrored buffer | Note in Phase 1, act in Phase 3 | VT viewport. `MaxScrollbackLines` is 10_000. Shift+PageUp and Shift+PageDown call `ScrollViewportBy`. Shift+Home and Shift+End call `ScrollViewportToTop` and `ScrollViewportToBottom`. There is no second buffer. | Use VT history if it exists. Do not mirror unless dogfood fails without it. |
+| D5 | Mouse in v1 | Phase 3 | Off. The keyboard supervise flow, including close, templates, scroll, and paste, works without a mouse handler. | Not required. |
 | D6 | Default command for a new session | Phase 2 | `$SHELL`, selected in the new-session dialog so it can be replaced before Start. Last-used command stays a Phase 3 template. | `$SHELL`, editable before start. Last-used command is a template concern, not the default. |
 | D7 | Open in `$EDITOR` from Files | Phase 2, else Phase 3 | Deferred. Terminal.Gui owns the host tty, so a real `$EDITOR` would mean suspending the TUI and restoring it. That is past spawn-and-return. No editor is embedded. | Yes, if it is spawn-and-return. Otherwise defer; do not block Phase 2. |
 
@@ -358,8 +383,9 @@ Write gaps here at the end of Phase 1 and again after Phase 3.5. A gap that is n
 |-----|----------|------------|------------|
 | Truecolor | Phase 1 | No | Cells carry RGB and that RGB is what Terminal.Gui draws. The host terminal decides how it quantizes. |
 | Ligatures and wide graphemes | Phase 1 | No | One host cell per VT cell. A wide character’s spacer tail is drawn as a space. |
-| Mouse | Phase 1 | No | The binding can encode mouse. There is no handler. D5. |
-| Scrollback UI | Phase 1 | No | The VT keeps 10_000 lines. Nothing moves the viewport. D4, Phase 3. |
+| Mouse | Phase 1 | No | Stays off for v1. D5. |
+| Scrollback UI | Phase 1 | No | Closed in Phase 3. The viewport moves inside the VT. D4. |
+| Host eats Ctrl+Shift+C | Phase 3 | No | Copy of the visible text is Ctrl+Shift+C when that chord reaches the app. A host that keeps the chord for itself never delivers it. Bracketed paste from the host is the paste path that was driven. |
 
 ---
 

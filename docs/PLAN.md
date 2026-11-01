@@ -36,26 +36,23 @@ A single-window TUI that lets you run multiple independent CLI agent sessions (C
 
 ### Layout
 ```
-┌─────────────────┬──────────────────────────────────────────────┐
-│ Sessions        │  [ Terminal | Files | Preview ]               │
-│                 │                                              │
-│ ● PI (main)     │  ┌────────────────────────────────────────┐  │
-│ ○ Claude Code   │  │                                        │  │
-│ ○ Codex         │  │          Active pane content           │  │
-│ ○ Custom        │  │                                        │  │
-│                 │  │                                        │  │
-│                 │  └────────────────────────────────────────┘  │
-│                 │                                              │
-│ [+] New session │  Status: cwd · pid · exit code               │
-└─────────────────┴──────────────────────────────────────────────┘
+┌──────────┬──────────────────────────────┬─────────────────────┐
+│ Sessions │  [ Terminal | Files ]        │ Preview             │
+│          │                              │                     │
+│ ● PI     │   active tab                 │ selected file       │
+│ ○ shell  │                              │ stays while you     │
+│          │                              │ use the terminal    │
+│          │  Status: cwd · pid · exit    │                     │
+└──────────┴──────────────────────────────┴─────────────────────┘
 ```
 
-### Per-session tabs (exactly three)
+### Per-session tabs
 1. **Terminal** — interactive PTY running the chosen CLI harness
 2. **Files** — simple file tree rooted at the session’s working directory
-3. **Preview** — Markdown or plain-text viewer for the currently selected file
 
-Switching sessions restores the last active tab for that session.
+**Preview** is a panel on the right, not a third tab. Ctrl+P opens and closes it. It shows the file selected in the tree and stays visible when the Terminal tab is showing.
+
+Switching sessions restores Terminal or Files. A saved `lastFocusedTab` of `preview` opens the panel and shows Terminal.
 
 ### Minimal session metadata shown
 - Name (user-editable)
@@ -158,12 +155,12 @@ No cost tracking, no context-window meters, no agent-specific icons (keep it gen
 - **Exit criterion**: can supervise 3–4 agent sessions and flip to a Markdown file in any of them. Met 2026-10-31. Record is in [ROADMAP.md](./ROADMAP.md).
 
 ### Phase 3 — Polish & usability
-- [ ] Themes that respect `NO_COLOR` and host terminal
-- [ ] Keyboard-driven workflow (new session, rename, close, switch tab, focus panes)
-- [ ] Session templates (pre-filled command + cwd)
-- [ ] Optional: copy/paste, scrollback navigation in terminal pane
-- [ ] Self-contained builds + simple install path (Homebrew formula or direct binary)
-- **Exit criterion**: daily-usable for the author’s own agent workflows
+- [x] Themes that respect `NO_COLOR` and host terminal
+- [x] Keyboard-driven workflow (new session, rename, close, switch tab, focus panes)
+- [x] Session templates (pre-filled command + cwd)
+- [x] Optional: copy/paste, scrollback navigation in terminal pane
+- [x] Self-contained builds + simple install path (Homebrew formula or direct binary). Direct publish folders for osx-arm64 and linux-x64. No Homebrew formula.
+- **Exit criterion**: daily-usable for the author’s own agent workflows. Not met. A week of real use has not happened, so v1 is not tagged. Record is in [ROADMAP.md](./ROADMAP.md).
 
 ### Later (explicitly out of scope for v1)
 - Cost / token tracking
@@ -196,7 +193,7 @@ No cost tracking, no context-window meters, no agent-specific icons (keep it gen
 - Last focused session id
 - Window size / layout preferences (optional)
 
-Stored as `~/.config/my-tui/state.json`.
+Stored as `~/.config/my-tui/state.json`. Templates are a sibling file, `templates.json`. They do not change the session shape.
 
 ---
 
@@ -216,7 +213,7 @@ Stored as `~/.config/my-tui/state.json`.
 
 1. Launch the app and create a new session that runs any CLI agent the user chooses.
 2. Switch between at least four concurrent sessions without losing state.
-3. In any session, open the Files tab, select a `.md` file, and read it in the Preview tab with basic formatting.
+3. In any session, open the Files tab, select a `.md` file, and read it in the preview panel. The panel stays open beside the terminal.
 4. No login, no upgrade button, no git UI, no worktree creation.
 5. Runs as a single binary on macOS (primary) and at least Linux.
 6. The author uses it for real agent work for a week without reverting to separate terminal windows.
@@ -226,10 +223,10 @@ Stored as `~/.config/my-tui/state.json`.
 ## 9. Open Questions
 
 - Exact .NET binding to prefer (`LibGhostty.Net` vs `DeBlasis.GhosttyVt`) — decided in Phase 0: DeBlasis.GhosttyVt 1.4.1. See [ROADMAP.md](./ROADMAP.md).
-- Whether to support a “quick open in `$EDITOR`” action from the Files pane — deferred in Phase 2 (D7). Suspending the TUI for a host editor is Phase 3 if it is still wanted.
-- Default command when creating a new session — decided in Phase 2 (D6): `$SHELL`, editable before start.
-- Whether scrollback should live entirely inside libghostty-vt or be mirrored into a Terminal.Gui buffer.
-- Mouse support priority for v1 (nice-to-have vs required).
+- Whether to support a “quick open in `$EDITOR`” action from the Files pane — deferred in Phase 2 (D7) and left there in Phase 3. No editor is embedded.
+- Default command when creating a new session — decided in Phase 2 (D6): `$SHELL`, editable before start. A saved command is a template (Phase 3).
+- Whether scrollback should live entirely inside libghostty-vt or be mirrored into a Terminal.Gui buffer — decided in Phase 3 (D4): the VT viewport, no second buffer.
+- Mouse support priority for v1 — decided in Phase 3 (D5): off.
 
 ---
 
@@ -245,4 +242,4 @@ Stored as `~/.config/my-tui/state.json`.
 
 ## Next Step
 
-Phase 2 is complete. Phase 3 has not started. The build order and the decision log are in [ROADMAP.md](./ROADMAP.md).
+Phase 3 slices are built. The v1 gate is not met: a week of real use is still open, and v1 is not tagged. The record is in [ROADMAP.md](./ROADMAP.md).

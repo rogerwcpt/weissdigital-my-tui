@@ -6,6 +6,8 @@
     <RootNamespace>MyTui</RootNamespace>
     <!-- LibraryImport stubs are generated as unsafe. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- A self-contained folder should start without a system libicu. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,8 +15,12 @@
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
   </ItemGroup>
 
-  <Target Name="BuildPtyShim" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+  <Target Name="BuildPtyShim" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('OSX')) and ('$(RuntimeIdentifier)' == '' or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('osx')))">
     <Exec Command="clang -shared -O2 -o &quot;$(OutputPath)libmytui_pty.dylib&quot; &quot;$(MSBuildThisFileDirectory)Native/pty_ioctl.c&quot; &amp;&amp; codesign -s - &quot;$(OutputPath)libmytui_pty.dylib&quot;" />
+  </Target>
+
+  <Target Name="SignPublishedPtyShim" AfterTargets="Publish" Condition="$([MSBuild]::IsOSPlatform('OSX')) and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('osx'))">
+    <Exec Command="clang -shared -O2 -o &quot;$(PublishDir)libmytui_pty.dylib&quot; &quot;$(MSBuildThisFileDirectory)Native/pty_ioctl.c&quot; &amp;&amp; codesign --force -s - &quot;$(PublishDir)libmytui_pty.dylib&quot; &amp;&amp; codesign --force -s - &quot;$(PublishDir)$(AssemblyName)&quot;" />
   </Target>
 
 </Project>

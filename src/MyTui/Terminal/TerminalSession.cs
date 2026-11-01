@@ -9,7 +9,7 @@ namespace MyTui.Terminal;
 
 /// <summary>
 /// One shell: a PTY plus a libghostty-vt grid. Unfocused sessions keep both.
-/// Scrollback stays inside the VT (10_000 lines). There is no scrollback UI.
+/// Scrollback stays inside the VT (10_000 lines). The viewport moves with ScrollViewport*.
 /// </summary>
 internal sealed class TerminalSession : IDisposable
 {
@@ -22,6 +22,9 @@ internal sealed class TerminalSession : IDisposable
     private string _title = "";
     private int _dirty = 1;
     private bool _disposed;
+    private PaintedCell[] _drawA = [];
+    private PaintedCell[] _drawB = [];
+    private bool _drawBNext;
 
     private TerminalSession(string name, int columns, int rows)
     {
@@ -90,6 +93,108 @@ internal sealed class TerminalSession : IDisposable
 
     internal void Write(ReadOnlySpan<byte> data) => _pty?.Write(data);
 
+    internal bool BracketedPaste
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _vt.ModeGet(TerminalMode.BracketedPaste);
+            }
+        }
+    }
+
+    internal int ScrollOffset
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _vt.ScrollOffset;
+            }
+        }
+    }
+
+    internal void ScrollBy(int delta)
+    {
+        if (delta == 0)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _vt.ScrollViewportBy(delta);
+        }
+
+        MarkDirty();
+    }
+
+    internal void ScrollToTop()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _vt.ScrollViewportToTop();
+        }
+
+        MarkDirty();
+    }
+
+    internal void ScrollToBottom()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _vt.ScrollViewportToBottom();
+        }
+
+        MarkDirty();
+    }
+
+    /// <summary>Typing or pasting returns to the prompt when the viewport is in the history.</summary>
+    internal void RevealBottom()
+    {
+        lock (_gate)
+        {
+            if (_disposed || _vt.ScrollOffset == 0)
+            {
+                return;
+            }
+
+            _vt.ScrollViewportToBottom();
+        }
+
+        MarkDirty();
+    }
+
+    internal void Paste(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        byte[] encoded;
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_vt.ScrollOffset != 0)
+            {
+                _vt.ScrollViewportToBottom();
+            }
+
+            bool bracketed = _vt.ModeGet(TerminalMode.BracketedPaste);
+            encoded = PasteInput.Encode(Encoding.UTF8.GetBytes(text), bracketed);
+        }
+
+        MarkDirty();
+        Write(encoded);
+    }
+
     internal void Resize(int columns, int rows)
     {
         if (columns < 1 || rows < 1)
@@ -121,7 +226,25 @@ internal sealed class TerminalSession : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             _render.Update(_vt);
-            return Copy(_render);
+            return Copy(_render, plainText: true, buffer: null);
+        }
+    }
+
+    /// <summary>
+    /// Grid for painting. Skips the plain-text copy and reuses one of two buffers so a frame
+    /// the view is still reading is not overwritten.
+    /// </summary>
+    internal ScreenFrame CaptureForDraw()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _render.Update(_vt);
+            ref PaintedCell[] slot = ref (_drawBNext ? ref _drawB : ref _drawA);
+            ScreenFrame frame = Copy(_render, plainText: false, buffer: slot);
+            slot = frame.Cells;
+            _drawBNext = !_drawBNext;
+            return frame;
         }
     }
 
@@ -195,12 +318,13 @@ internal sealed class TerminalSession : IDisposable
 
     private void MarkDirty() => Interlocked.Exchange(ref _dirty, 1);
 
-    private ScreenFrame Copy(RenderState state)
+    private ScreenFrame Copy(RenderState state, bool plainText, PaintedCell[]? buffer)
     {
         RenderStateColors colors = state.Colors;
-        var cells = new PaintedCell[Columns * Rows];
+        int count = Columns * Rows;
+        PaintedCell[] cells = buffer is { Length: > 0 } && buffer.Length == count ? buffer : new PaintedCell[count];
         int used = 0;
-        var plain = new StringBuilder();
+        var plain = plainText ? new StringBuilder() : null;
         foreach (RenderStateRow row in state.Rows)
         {
             if (used >= cells.Length)
@@ -209,7 +333,7 @@ internal sealed class TerminalSession : IDisposable
             }
 
             int column = 0;
-            var line = new StringBuilder();
+            var line = plainText ? new StringBuilder() : null;
             foreach (Cell cell in row.Cells)
             {
                 if (used >= cells.Length)
@@ -219,7 +343,7 @@ internal sealed class TerminalSession : IDisposable
 
                 PaintedCell painted = Paint(cell, colors);
                 cells[used++] = painted;
-                if (!painted.WideTail)
+                if (line is not null && !painted.WideTail)
                 {
                     line.Append(painted.Grapheme.Length == 0 ? " " : painted.Grapheme);
                 }
@@ -234,16 +358,19 @@ internal sealed class TerminalSession : IDisposable
             while (column < Columns && used < cells.Length)
             {
                 cells[used++] = Blank(colors);
-                line.Append(' ');
+                line?.Append(' ');
                 column++;
             }
 
-            if (plain.Length > 0)
+            if (plain is not null)
             {
-                plain.Append('\n');
-            }
+                if (plain.Length > 0)
+                {
+                    plain.Append('\n');
+                }
 
-            plain.Append(line.ToString().TrimEnd());
+                plain.Append(line!.ToString().TrimEnd());
+            }
         }
 
         while (used < cells.Length)
@@ -256,7 +383,7 @@ internal sealed class TerminalSession : IDisposable
             Columns = Columns,
             Rows = Rows,
             Cells = cells,
-            PlainText = plain.ToString(),
+            PlainText = plain?.ToString() ?? "",
             CursorX = state.CursorViewportX,
             CursorY = state.CursorViewportY,
             CursorVisible = state.CursorVisible && state.CursorViewportHasValue,

@@ -11,7 +11,8 @@ using Terminal.Gui.Views;
 namespace MyTui.UI;
 
 /// <summary>
-/// Session list plus Terminal, Files, and Preview. One grid is drawn. Other processes keep their PTY.
+/// Session list, Terminal and Files tabs, and a preview panel on the right. One grid is drawn.
+/// Other processes keep their PTY.
 /// </summary>
 internal sealed class SessionScreen : IDisposable
 {
@@ -20,15 +21,17 @@ internal sealed class SessionScreen : IDisposable
     private readonly SessionList _list;
     private readonly CellGridView _grid;
     private readonly FileTree _tree;
+    private readonly Label _filesNote;
     private readonly View _terminal;
     private readonly View _files;
-    private readonly View _preview;
+    private readonly FrameView _preview;
     private readonly View[] _panes;
+    private readonly PanelCaption _sessionsCaption;
+    private readonly PanelCaption _contentCaption;
+    private readonly PanelCaption _previewCaption;
     private readonly Tabs _tabs;
     private readonly Markdown _markdown;
-#pragma warning disable CS0618 // Plain text only. The replacement is an editor package, which this phase does not take.
-    private readonly TextView _text;
-#pragma warning restore CS0618
+    private readonly PreviewTextView _text;
     private readonly Label _note;
     private readonly Label _hint;
     private readonly Label _status;
@@ -36,9 +39,48 @@ internal sealed class SessionScreen : IDisposable
     private string _root = "";
     private object? _timeout;
     private int _blinkPhase = -1;
+    private bool _previewOpen;
+    private bool _sessionsHidden;
+    private bool _contentHidden;
+    private MaximizedPanel _maximized;
     private bool _updating;
     private bool _modal;
     private bool _disposed;
+    private readonly PopoverMenu _menu;
+
+    /// <summary>
+    /// Mac Delete is Backspace. Forward delete is Delete or DeleteChar. Any of them closes from outside a live terminal.
+    /// </summary>
+    internal static bool IsCloseKey(Key key) =>
+        !key.IsCtrl && !key.IsAlt && !key.IsShift
+        && (key == Key.Backspace || key == Key.Delete || key == Key.DeleteChar);
+
+    internal static bool IsPanelCycle(Key key) =>
+        !key.IsAlt && (key == Key.Tab.WithCtrl || key == Key.Tab.WithCtrl.WithShift);
+
+    internal static bool IsHideSessions(Key key) =>
+        key == Key.F4 && !key.IsCtrl && !key.IsAlt && !key.IsShift;
+
+    internal static bool IsMaximizePanel(Key key) =>
+        key == Key.F11 && !key.IsCtrl && !key.IsAlt && !key.IsShift;
+
+    /// <summary>Selected session row, with a close mark in the last column.</summary>
+    internal static string ActiveRow(string label, int width)
+    {
+        if (width < 2)
+        {
+            return label;
+        }
+
+        var runes = label.EnumerateRunes().ToList();
+        if (runes.Count >= width)
+        {
+            runes = runes.Take(width - 1).ToList();
+        }
+
+        int spaces = width - 1 - runes.Count;
+        return string.Concat(runes) + new string(' ', spaces) + "\u00d7";
+    }
 
     internal SessionScreen(IApplication app)
     {
@@ -51,7 +93,7 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = 1,
             CanFocus = false,
-            Text = "Ctrl+N creates a session.",
+            Text = "Ctrl+N creates a session. F1 opens the menu.",
         };
         _tree = new FileTree(this, new DelegateTreeBuilder<FileNode>(
             node => Workspace.Children(_root, node.Path),
@@ -70,7 +112,20 @@ internal sealed class SessionScreen : IDisposable
                 return;
             }
 
+            string? previous = session.SelectedPath;
             session.SelectedPath = args.NewValue?.Path;
+            if (args.NewValue is { Directory: false }
+                && !string.Equals(previous, session.SelectedPath, StringComparison.Ordinal))
+            {
+                _previewOpen = true;
+                if (_maximized == MaximizedPanel.Content)
+                {
+                    _maximized = MaximizedPanel.None;
+                }
+
+                ApplyLayout();
+            }
+
             ShowPreview(session);
         };
         _markdown = new Markdown
@@ -83,19 +138,9 @@ internal sealed class SessionScreen : IDisposable
             CanFocus = true,
             HotKeySpecifier = new Rune('\uE000'),
         };
-#pragma warning disable CS0618
-        _text = new TextView
-        {
-            X = 0,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill(),
-            ReadOnly = true,
-            WordWrap = true,
-            Visible = false,
-            CanFocus = true,
-        };
-#pragma warning restore CS0618
+        _markdown.SetScheme(HostTheme.Preview());
+        _text = new PreviewTextView { Visible = false };
+        _text.SetScheme(HostTheme.Preview());
         _note = new Label
         {
             X = 0,
@@ -106,16 +151,37 @@ internal sealed class SessionScreen : IDisposable
             Visible = true,
             Text = "Select a file.",
         };
-        _terminal = new View { Title = "Terminal", Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
-        _files = new View { Title = "Files", Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
-        _preview = new View { Title = "Preview", Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
+        _filesNote = new Label
+        {
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+            CanFocus = false,
+            Visible = false,
+            Text = "Empty directory.",
+        };
+        _terminal = new View { Title = "Terminal", CanFocus = true };
+        _files = new View { Title = "Files", CanFocus = true };
+        _preview = new FrameView
+        {
+            Title = "Preview",
+            X = 0,
+            Y = 0,
+            Width = 0,
+            Height = Dim.Fill(1),
+            Visible = false,
+            CanFocus = true,
+        };
         _terminal.Add(_grid, _hint);
-        _files.Add(_tree);
+        _files.Add(_tree, _filesNote);
         _preview.Add(_markdown, _text, _note);
         Wire(_markdown);
         Wire(_text);
         Wire(_preview);
-        _panes = [_terminal, _files, _preview];
+        Wire(_terminal);
+        Wire(_files);
+        _panes = [_terminal, _files];
         _tabs = new Tabs
         {
             X = 0,
@@ -123,7 +189,9 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = Dim.Fill(1),
         };
-        _tabs.Add(_terminal, _files, _preview);
+        _tabs.Add(_terminal, _files);
+        _tabs.ValueChanged += (_, args) => OnTabChanged(args.NewValue);
+        Wire(_tabs);
         _status = new Label
         {
             X = 0,
@@ -131,7 +199,7 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = 1,
             CanFocus = false,
-            Text = "Ctrl+N creates a session.",
+            Text = "Ctrl+N creates a session. F1 opens the menu.",
         };
         _list = new SessionList(this)
         {
@@ -151,6 +219,24 @@ internal sealed class SessionScreen : IDisposable
             ShowSession(index);
         };
 
+        _menu = new PopoverMenu(new MenuItem[]
+        {
+            new("_Open Folder", Key.Empty, OpenFolder),
+            new("_Keystrokes", Key.Empty, ShowHelp),
+            new("_About", Key.Empty, ShowAbout),
+            new("_Quit", Key.Q.WithCtrl, () => _app.RequestStop()),
+        })
+        {
+            App = _app,
+        };
+        _menu.KeyDown += (_, key) =>
+        {
+            if (key == Key.F1 && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+            {
+                _app.Popovers?.Hide(_menu);
+                key.Handled = true;
+            }
+        };
         Sessions = new FrameView
         {
             Title = "Sessions",
@@ -168,8 +254,15 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = Dim.Fill(),
         };
-        Content.Add(_tabs, _status);
+        Content.Add(_tabs, _preview, _status);
+        _sessionsCaption = PanelCaption.Attach(Sessions, () => ToggleMaximize(MaximizedPanel.Sessions), ToggleSessions);
+        BorderGlyph.Place(Sessions, '+', atEnd: true, NewSession);
+        _contentCaption = PanelCaption.Attach(Content, () => ToggleMaximize(MaximizedPanel.Content), MinimizeContent);
+        _previewCaption = PanelCaption.Attach(_preview, () => ToggleMaximize(MaximizedPanel.Preview), MinimizePreview);
+        ApplyLayout();
     }
+
+    internal void AttachTitle(Window window) => TitleBar.Attach(window, ToggleMenu);
 
     internal FrameView Sessions { get; }
 
@@ -213,9 +306,33 @@ internal sealed class SessionScreen : IDisposable
             return true;
         }
 
+        if (IsPanelCycle(key))
+        {
+            CyclePanels(!key.IsShift);
+            return true;
+        }
+
+        if (IsHideSessions(key))
+        {
+            ToggleSessions();
+            return true;
+        }
+
+        if (IsMaximizePanel(key))
+        {
+            ToggleMaximize(PanelUnderFocus());
+            return true;
+        }
+
         if (key == Key.T.WithCtrl && !key.IsAlt && !key.IsShift)
         {
             CycleTab();
+            return true;
+        }
+
+        if (key == Key.P.WithCtrl && !key.IsAlt && !key.IsShift)
+        {
+            TogglePreview();
             return true;
         }
 
@@ -231,10 +348,36 @@ internal sealed class SessionScreen : IDisposable
             return true;
         }
 
+        if (key == Key.F1 && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+        {
+            ToggleMenu();
+            return true;
+        }
+
+        if (key == Key.F2 && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+        {
+            Templates();
+            return true;
+        }
+
+        if (key == Key.C.WithCtrl.WithShift && !key.IsAlt)
+        {
+            CopyVisible();
+            return true;
+        }
+
+        if (key == Key.V.WithCtrl.WithShift && !key.IsAlt)
+        {
+            PasteClipboard();
+            return true;
+        }
+
         return false;
     }
 
-    internal void NewSession()
+    internal void NewSession() => BeginNew(null);
+
+    internal void OpenFolder()
     {
         if (_manager is null || _modal)
         {
@@ -252,7 +395,81 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        var initial = new SessionDraft(SuggestName(Path.GetFileName(shell)), Directory.GetCurrentDirectory(), shell, "");
+        HoldModal();
+        string? folder;
+        try
+        {
+            folder = FolderDialog.Ask(_app, _manager.Focused?.Cwd);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+        {
+            return;
+        }
+
+        string leaf = Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var session = _manager.Create(
+            SuggestName(string.IsNullOrEmpty(leaf) ? "folder" : leaf),
+            Path.GetFullPath(folder),
+            shell,
+            [],
+            null);
+        try
+        {
+            session.Start(Columns(), Rows());
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or PlatformNotSupportedException)
+        {
+            session.StartError = ex.Message;
+        }
+
+        RefreshLabels();
+        ShowSession(_manager.FocusedIndex);
+        if (session.IsRunning)
+        {
+            FocusPane();
+        }
+    }
+
+    private void BeginNew(SessionTemplate? template)
+    {
+        if (_manager is null || _modal)
+        {
+            return;
+        }
+
+        SessionDraft initial;
+        IReadOnlyDictionary<string, string>? env = null;
+        if (template is null)
+        {
+            string shell;
+            try
+            {
+                shell = ShellLocator.Resolve();
+            }
+            catch (InvalidOperationException ex)
+            {
+                _status.Text = ex.Message;
+                return;
+            }
+
+            initial = new SessionDraft(SuggestName(Path.GetFileName(shell)), Directory.GetCurrentDirectory(), shell, "");
+        }
+        else
+        {
+            string cwd = string.IsNullOrWhiteSpace(template.Cwd) ? Directory.GetCurrentDirectory() : template.Cwd;
+            initial = new SessionDraft(
+                SuggestName(template.Name),
+                cwd,
+                template.Command,
+                string.Join(' ', template.Args));
+            env = template.Env;
+        }
+
         SessionDraft? draft = Ask("New session", initial, "Start", mustResolve: true);
         if (draft is null)
         {
@@ -263,7 +480,8 @@ internal sealed class SessionScreen : IDisposable
             draft.Value.Name,
             Path.GetFullPath(draft.Value.Cwd),
             draft.Value.Command,
-            CommandLine.Split(draft.Value.Args));
+            CommandLine.Split(draft.Value.Args),
+            env);
         try
         {
             session.Start(Columns(), Rows());
@@ -303,22 +521,19 @@ internal sealed class SessionScreen : IDisposable
             CommandLine.Split(draft.Value.Args));
         session.StartError = null;
         Content.Title = session.Name;
-        if (session.Tab == SessionTab.Files)
-        {
-            RefreshFiles();
-        }
-        else
-        {
-            ShowPreview(session);
-        }
-
+        RefreshFiles();
         SyncLabel(_manager.FocusedIndex);
         UpdateStatus();
     }
 
     internal void CloseSelected()
     {
-        if (_manager?.Focused is not Session session)
+        if (_modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        if (session.IsRunning && !ConfirmClose(session.Name))
         {
             return;
         }
@@ -361,11 +576,16 @@ internal sealed class SessionScreen : IDisposable
         if (_list.HasFocus)
         {
             FocusPane();
+            return;
         }
-        else
+
+        if (_previewOpen && !PreviewHasFocus())
         {
-            _list.SetFocus();
+            FocusPreview();
+            return;
         }
+
+        _list.SetFocus();
     }
 
     internal void RefreshFiles()
@@ -375,11 +595,18 @@ internal sealed class SessionScreen : IDisposable
         string? keep = session?.SelectedPath;
         _updating = true;
         _tree.ClearObjects();
+        IReadOnlyList<FileNode> children = [];
         if (session is not null && Directory.Exists(session.Cwd))
         {
-            _tree.AddObjects(Workspace.Children(session.Cwd, session.Cwd));
+            children = Workspace.Children(session.Cwd, session.Cwd);
+            _tree.AddObjects(children);
         }
 
+        _tree.Visible = children.Count > 0;
+        _filesNote.Visible = !_tree.Visible;
+        _filesNote.Text = session is not null && Directory.Exists(session.Cwd)
+            ? "Empty directory."
+            : "Directory not found.";
         _updating = false;
         if (keep is not null)
         {
@@ -418,16 +645,151 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
+    private void ShowAbout()
+    {
+        if (_modal)
+        {
+            return;
+        }
+
+        HoldModal();
+        try
+        {
+            AboutDialog.Show(_app);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+    }
+
+    private void ShowHelp()
+    {
+        if (_modal)
+        {
+            return;
+        }
+
+        HoldModal();
+        try
+        {
+            HelpDialog.Show(_app);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+    }
+
+    private void Templates()
+    {
+        if (_manager is null || _modal)
+        {
+            return;
+        }
+
+        var store = new TemplateStore(TemplateStore.DefaultPath());
+        while (true)
+        {
+            IReadOnlyList<SessionTemplate> templates = store.Load();
+            HoldModal();
+            TemplateAction action;
+            int index;
+            try
+            {
+                action = TemplateDialog.Ask(_app, templates, out index);
+            }
+            finally
+            {
+                ReleaseModal();
+            }
+
+            if (action == TemplateAction.Cancel)
+            {
+                return;
+            }
+
+            if (action == TemplateAction.Save)
+            {
+                if (_manager.Focused is not Session session)
+                {
+                    _status.Text = "No session to save.";
+                    return;
+                }
+
+                store.Upsert(new SessionTemplate
+                {
+                    Name = session.Name,
+                    Cwd = session.Cwd,
+                    Command = session.Command,
+                    Args = session.Args,
+                    Env = new Dictionary<string, string>(session.Env),
+                });
+                continue;
+            }
+
+            if (action == TemplateAction.Remove)
+            {
+                store.RemoveAt(index);
+                continue;
+            }
+
+            if (action == TemplateAction.Apply && index >= 0 && index < templates.Count)
+            {
+                BeginNew(templates[index]);
+            }
+
+            return;
+        }
+    }
+
+    private bool ConfirmClose(string name)
+    {
+        HoldModal();
+        try
+        {
+            return CloseDialog.Confirm(_app, name);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+    }
+
+    private void CopyVisible()
+    {
+        string? text = _grid.Session?.Capture().PlainText;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        _app.Clipboard?.TrySetClipboardData(text);
+    }
+
+    private void PasteClipboard()
+    {
+        if (_grid.Session is not TerminalSession session || session.HasExited || !session.IsRunning)
+        {
+            return;
+        }
+
+        if (_app.Clipboard?.TryGetClipboardData(out string text) == true && !string.IsNullOrEmpty(text))
+        {
+            session.Paste(text);
+        }
+    }
+
     private SessionDraft? Ask(string title, SessionDraft initial, string accept, bool mustResolve)
     {
-        _modal = true;
+        HoldModal();
         try
         {
             return SessionDialog.Ask(_app, title, initial, accept, mustResolve);
         }
         finally
         {
-            _modal = false;
+            ReleaseModal();
         }
     }
 
@@ -461,13 +823,15 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        SessionTab next = session.Tab switch
+        if (_maximized is MaximizedPanel.Sessions or MaximizedPanel.Preview)
         {
-            SessionTab.Terminal => SessionTab.Files,
-            SessionTab.Files => SessionTab.Preview,
-            _ => SessionTab.Terminal,
-        };
+            _maximized = MaximizedPanel.None;
+        }
+
+        _contentHidden = false;
+        SessionTab next = session.Tab == SessionTab.Files ? SessionTab.Terminal : SessionTab.Files;
         _manager.SetTab(session, next);
+        ApplyLayout();
         SelectTab(next);
         _grid.Live = next == SessionTab.Terminal;
         if (next == SessionTab.Files)
@@ -494,24 +858,28 @@ internal sealed class SessionScreen : IDisposable
         bool listHadFocus = _list.HasFocus;
         _manager.Focus(index);
         Session session = _manager.Sessions[index];
+        if (session.Tab == SessionTab.Preview)
+        {
+            _previewOpen = true;
+            ApplyLayout();
+            _manager.SetTab(session, SessionTab.Terminal);
+        }
+
         _hint.Visible = false;
         _grid.Visible = true;
         _grid.Session = session.Terminal;
         _grid.Live = session.Tab == SessionTab.Terminal;
         Content.Title = session.Name;
         SelectTab(session.Tab);
-        if (session.Tab == SessionTab.Files)
-        {
-            RefreshFiles();
-        }
-        else
-        {
-            ShowPreview(session);
-        }
+        RefreshFiles();
 
         ResizeActive();
         UpdateStatus();
-        SyncLabel(index);
+        for (int i = 0; i < _labels.Count; i++)
+        {
+            SyncLabel(i);
+        }
+
         if (listHadFocus)
         {
             _list.SetFocus();
@@ -520,9 +888,358 @@ internal sealed class SessionScreen : IDisposable
 
     private void SelectTab(SessionTab tab)
     {
+        if (tab == SessionTab.Preview)
+        {
+            tab = SessionTab.Terminal;
+        }
+
         _updating = true;
         _tabs.Value = _panes[(int)tab];
         _updating = false;
+    }
+
+    private void OnTabChanged(View? view)
+    {
+        if (_updating || _manager?.Focused is not Session session || view is null)
+        {
+            return;
+        }
+
+        int index = Array.IndexOf(_panes, view);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var tab = (SessionTab)index;
+        _manager.SetTab(session, tab);
+        _grid.Live = tab == SessionTab.Terminal;
+        if (tab == SessionTab.Files)
+        {
+            RefreshFiles();
+        }
+
+        FocusPane();
+        ResizeActive();
+    }
+
+    private void TogglePreview()
+    {
+        bool previewFocused = PreviewHasFocus();
+        _previewOpen = !_previewOpen;
+        if (!_previewOpen && _maximized == MaximizedPanel.Preview)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+
+        if (_previewOpen && _maximized != MaximizedPanel.None)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+
+        _contentHidden = false;
+        ApplyLayout();
+        if (_previewOpen)
+        {
+            FocusPreview();
+        }
+        else if (previewFocused)
+        {
+            FocusPane();
+        }
+
+        ResizeActive();
+    }
+
+    private void CyclePanels(bool forward)
+    {
+        PanelStop[] order = [PanelStop.Sessions, PanelStop.Terminal, PanelStop.Files];
+        int index = Array.IndexOf(order, CurrentStop());
+        if (index < 0)
+        {
+            index = 0;
+        }
+
+        int next = (index + (forward ? 1 : order.Length - 1)) % order.Length;
+        FocusStop(order[next]);
+    }
+
+    private PanelStop CurrentStop()
+    {
+        if (_list.HasFocus)
+        {
+            return PanelStop.Sessions;
+        }
+
+        if (_tree.HasFocus || _files.HasFocus)
+        {
+            return PanelStop.Files;
+        }
+
+        if (_grid.HasFocus || _terminal.HasFocus)
+        {
+            return PanelStop.Terminal;
+        }
+
+        if (PreviewHasFocus() || _manager?.Focused?.Tab == SessionTab.Files)
+        {
+            return _manager?.Focused?.Tab == SessionTab.Files ? PanelStop.Files : PanelStop.Terminal;
+        }
+
+        return PanelStop.Terminal;
+    }
+
+    private void FocusStop(PanelStop stop)
+    {
+        switch (stop)
+        {
+            case PanelStop.Sessions:
+                _sessionsHidden = false;
+                if (_maximized is MaximizedPanel.Content or MaximizedPanel.Preview)
+                {
+                    _maximized = MaximizedPanel.None;
+                }
+
+                ApplyLayout();
+                _list.SetFocus();
+                break;
+            case PanelStop.Terminal:
+                ShowTab(SessionTab.Terminal);
+                break;
+            case PanelStop.Files:
+                ShowTab(SessionTab.Files);
+                break;
+        }
+    }
+
+    private void ShowTab(SessionTab tab)
+    {
+        _contentHidden = false;
+        if (_maximized is MaximizedPanel.Sessions or MaximizedPanel.Preview)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+
+        ApplyLayout();
+        if (_manager?.Focused is Session session)
+        {
+            _manager.SetTab(session, tab);
+            _grid.Live = tab == SessionTab.Terminal;
+            if (tab == SessionTab.Files)
+            {
+                RefreshFiles();
+            }
+        }
+
+        SelectTab(tab);
+        FocusPane();
+        ResizeActive();
+    }
+
+    private void ToggleSessions()
+    {
+        WorkspaceLayout layout = WorkspaceLayout.Compute(_sessionsHidden, _contentHidden, _previewOpen, _maximized);
+        if (layout.SessionsVisible)
+        {
+            _sessionsHidden = true;
+            _contentHidden = false;
+            if (_maximized == MaximizedPanel.Sessions)
+            {
+                _maximized = MaximizedPanel.None;
+            }
+
+            ApplyLayout();
+            if (_list.HasFocus)
+            {
+                FocusPane();
+            }
+
+            return;
+        }
+
+        _sessionsHidden = false;
+        if (_maximized is MaximizedPanel.Content or MaximizedPanel.Preview)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+
+        ApplyLayout();
+        _list.SetFocus();
+    }
+
+    private void MinimizeContent()
+    {
+        _contentHidden = true;
+        _sessionsHidden = false;
+        if (_maximized is MaximizedPanel.Content or MaximizedPanel.Preview)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+
+        ApplyLayout();
+        _list.SetFocus();
+    }
+
+    private void MinimizePreview()
+    {
+        bool previewFocused = PreviewHasFocus();
+        _previewOpen = false;
+        if (_maximized == MaximizedPanel.Preview)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+
+        ApplyLayout();
+        if (previewFocused)
+        {
+            FocusPane();
+        }
+    }
+
+    private void ToggleMaximize(MaximizedPanel panel)
+    {
+        if (_maximized == panel)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+        else
+        {
+            _maximized = panel;
+            switch (panel)
+            {
+                case MaximizedPanel.Sessions:
+                    _sessionsHidden = false;
+                    break;
+                case MaximizedPanel.Content:
+                    _contentHidden = false;
+                    break;
+                case MaximizedPanel.Preview:
+                    _previewOpen = true;
+                    _contentHidden = false;
+                    break;
+            }
+        }
+
+        ApplyLayout();
+        switch (panel)
+        {
+            case MaximizedPanel.Sessions:
+                _list.SetFocus();
+                break;
+            case MaximizedPanel.Preview:
+                if (_preview.Visible)
+                {
+                    FocusPreview();
+                }
+                else
+                {
+                    FocusPane();
+                }
+
+                break;
+            default:
+                FocusPane();
+                break;
+        }
+    }
+
+    private MaximizedPanel PanelUnderFocus()
+    {
+        if (_list.HasFocus)
+        {
+            return MaximizedPanel.Sessions;
+        }
+
+        if (PreviewHasFocus())
+        {
+            return MaximizedPanel.Preview;
+        }
+
+        return MaximizedPanel.Content;
+    }
+
+    private void ApplyLayout()
+    {
+        WorkspaceLayout layout = WorkspaceLayout.Compute(_sessionsHidden, _contentHidden, _previewOpen, _maximized);
+        Sessions.Visible = layout.SessionsVisible;
+        Sessions.X = 0;
+        Sessions.Y = 0;
+        Sessions.Width = layout.SessionsFill ? Dim.Fill() : layout.SessionsVisible ? 28 : 0;
+        Sessions.Height = Dim.Fill();
+
+        Content.Visible = layout.ContentVisible;
+        Content.X = layout.SessionsVisible && !layout.SessionsFill ? Pos.Right(Sessions) : 0;
+        Content.Y = 0;
+        Content.Width = layout.ContentVisible ? Dim.Fill() : 0;
+        Content.Height = Dim.Fill();
+
+        _tabs.Visible = layout.TabsVisible;
+        _status.Visible = layout.TabsVisible;
+        _tabs.X = 0;
+        _tabs.Y = 0;
+        _tabs.Height = Dim.Fill(1);
+
+        if (layout.PreviewFill)
+        {
+            _preview.Visible = true;
+            _preview.X = 0;
+            _preview.Y = 0;
+            _preview.Width = Dim.Fill();
+            _preview.Height = Dim.Fill();
+        }
+        else if (layout.PreviewVisible)
+        {
+            _tabs.Width = Dim.Percent(60);
+            _preview.Visible = true;
+            _preview.X = Pos.Right(_tabs);
+            _preview.Y = 0;
+            _preview.Width = Dim.Fill();
+            _preview.Height = Dim.Fill(1);
+        }
+        else
+        {
+            _preview.Visible = false;
+            _preview.Width = 0;
+            _tabs.Width = Dim.Fill();
+        }
+
+        _sessionsCaption.Maximized = _maximized == MaximizedPanel.Sessions;
+        _contentCaption.Maximized = _maximized == MaximizedPanel.Content;
+        _previewCaption.Maximized = _maximized == MaximizedPanel.Preview;
+
+        if (Sessions.SuperView is { } parent)
+        {
+            parent.SetNeedsLayout();
+            parent.Layout();
+        }
+
+        ResizeActive();
+    }
+
+    private enum PanelStop
+    {
+        Sessions,
+        Terminal,
+        Files,
+    }
+
+    private bool PreviewHasFocus() =>
+        _preview.HasFocus || _markdown.HasFocus || _text.HasFocus;
+
+    private void FocusPreview()
+    {
+        if (_markdown.Visible)
+        {
+            _markdown.SetFocus();
+        }
+        else if (_text.Visible)
+        {
+            _text.SetFocus();
+        }
+        else
+        {
+            _preview.SetFocus();
+        }
     }
 
     private void FocusPane()
@@ -530,20 +1247,13 @@ internal sealed class SessionScreen : IDisposable
         switch (_manager?.Focused?.Tab)
         {
             case SessionTab.Files:
-                _tree.SetFocus();
-                break;
-            case SessionTab.Preview:
-                if (_markdown.Visible)
+                if (_tree.Visible)
                 {
-                    _markdown.SetFocus();
-                }
-                else if (_text.Visible)
-                {
-                    _text.SetFocus();
+                    _tree.SetFocus();
                 }
                 else
                 {
-                    _preview.SetFocus();
+                    _files.SetFocus();
                 }
 
                 break;
@@ -561,9 +1271,14 @@ internal sealed class SessionScreen : IDisposable
     {
         if (session is null)
         {
+            _preview.Title = "Preview";
             ApplyPreview(new PreviewText.Content(PreviewText.Kind.None, "Select a file."));
             return;
         }
+
+        _preview.Title = session.SelectedPath is { Length: > 0 } path
+            ? "Preview  " + Path.GetFileName(path)
+            : "Preview";
 
         if (session.SelectedPath is not null && !Workspace.IsInside(session.Cwd, session.SelectedPath))
         {
@@ -586,7 +1301,7 @@ internal sealed class SessionScreen : IDisposable
 
         if (_text.Visible)
         {
-            _text.Text = content.Text;
+            _text.Content = content.Text;
         }
 
         if (_note.Visible)
@@ -601,6 +1316,8 @@ internal sealed class SessionScreen : IDisposable
         _root = "";
         _tree.ClearObjects();
         _updating = false;
+        _tree.Visible = true;
+        _filesNote.Visible = false;
     }
 
     private void RefreshLabels()
@@ -616,9 +1333,9 @@ internal sealed class SessionScreen : IDisposable
             _labels.RemoveAt(_labels.Count - 1);
         }
 
-        foreach (Session session in _manager.Sessions)
+        for (int i = 0; i < _manager.Sessions.Count; i++)
         {
-            _labels.Add(session.ListLabel);
+            _labels.Add(RowText(_manager.Sessions[i], i));
         }
 
         if (_manager.Sessions.Count > 0)
@@ -629,6 +1346,33 @@ internal sealed class SessionScreen : IDisposable
         _updating = false;
     }
 
+    private void ToggleMenu()
+    {
+        if (_modal)
+        {
+            return;
+        }
+
+        if (_menu.Visible)
+        {
+            _app.Popovers?.Hide(_menu);
+            return;
+        }
+
+        _menu.MakeVisible(new System.Drawing.Point(1, 1));
+    }
+
+    private string RowText(Session session, int index)
+    {
+        string label = session.ListLabel;
+        if (_manager is null || index != _manager.FocusedIndex)
+        {
+            return label;
+        }
+
+        return ActiveRow(label, _list.Viewport.Width);
+    }
+
     private void SyncLabel(int index)
     {
         if (_manager is null || index < 0 || index >= _labels.Count)
@@ -636,7 +1380,7 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        string label = _manager.Sessions[index].ListLabel;
+        string label = RowText(_manager.Sessions[index], index);
         if (_labels[index] != label)
         {
             _labels[index] = label;
@@ -645,13 +1389,27 @@ internal sealed class SessionScreen : IDisposable
 
     private void UpdateStatus()
     {
-        if (_manager?.Focused is Session session)
+        string text = _manager?.Focused is Session session
+            ? session.StatusLine
+            : "Ctrl+N creates a session. F1 opens the menu.";
+        if (text == _status.Text)
         {
-            _status.Text = session.StatusLine;
             return;
         }
 
-        _status.Text = "Ctrl+N creates a session.";
+        _status.Text = text;
+    }
+
+    private void HoldModal()
+    {
+        _modal = true;
+        _grid.Repaint();
+    }
+
+    private void ReleaseModal()
+    {
+        _modal = false;
+        _grid.Repaint();
     }
 
     private void ResizeActive()
@@ -748,7 +1506,7 @@ internal sealed class SessionScreen : IDisposable
                 return;
             }
 
-            if (key == Key.Delete && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+            if (IsCloseKey(key))
             {
                 CloseSelected();
                 key.Handled = true;
@@ -774,7 +1532,7 @@ internal sealed class SessionScreen : IDisposable
                 return true;
             }
 
-            if (key == Key.Delete && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+            if (IsCloseKey(key))
             {
                 _screen.CloseSelected();
                 return true;
@@ -800,6 +1558,24 @@ internal sealed class SessionScreen : IDisposable
 
             return base.OnKeyDown(key);
         }
+
+        protected override bool OnMouseEvent(Mouse mouse)
+        {
+            if (mouse.Flags.HasFlag(MouseFlags.LeftButtonClicked)
+                && mouse.Position is { } position
+                && Viewport.Width > 1
+                && (int)position.X >= Viewport.Width - 1)
+            {
+                int row = Viewport.Y + (int)position.Y;
+                if (SelectedItem == row)
+                {
+                    _screen.CloseSelected();
+                    return true;
+                }
+            }
+
+            return base.OnMouseEvent(mouse);
+        }
     }
 
     private sealed class FileTree : TreeView<FileNode>
@@ -821,7 +1597,7 @@ internal sealed class SessionScreen : IDisposable
                 return true;
             }
 
-            if (key == Key.Delete && !key.IsCtrl && !key.IsAlt && !key.IsShift)
+            if (IsCloseKey(key))
             {
                 _screen.CloseSelected();
                 return true;
