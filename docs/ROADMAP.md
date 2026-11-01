@@ -275,7 +275,7 @@ All of PLAN.md §8:
 
 - Date: 2026-11-01
 - Not complete. Items 1–5 of the gate were observed. Item 6, a week of real use, was not. v1 is not tagged.
-- Keys: F1 lists the existing chords. Delete on a running session asks first. Esc cancels that dialog. Enter on Close stops it. Stopped and exited sessions still close immediately.
+- Keys: F1 lists the existing chords. Delete on a running session asks first. Esc cancels that dialog. Enter on Close stops it. Stopped and exited sessions still close immediately. Ctrl+B c and Ctrl+B v copy and paste when the host keeps Ctrl+Shift+C.
 - UI follow-up, 2026-11-01. Clicking Files switched the tab and left the tree empty, because the directory was read only on Ctrl+T. Any change onto Files reads it, and showing a session reads it too. Preview is a right-hand panel (Ctrl+P), so the selected file stays visible on the Terminal tab. The Mac Delete key sends Backspace; that closes a session from the list, Files, the preview, and an idle terminal. Inside a running terminal it still deletes a character. Forward delete closes the same way. A running session still asks first.
 - `NO_COLOR` (and `TERM=dumb`) leaves the chrome and the cell grid on the terminal default. A pty drive with `NO_COLOR=1` drew a red `printf` and the host stream had no `38;2`, `48;2`, `38;5`, or `31m`. It did emit `39m` and `49m`, which select the terminal’s own colors.
 - Templates are `~/.config/my-tui/templates.json`, beside `state.json`. F2 applies one template into the new-session dialog. Saving stores the focused session. A drive applied `marked` (`/bin/zsh`, cwd `/tmp`, env `MYTUI_TEMPLATE=phase3`), cancelled, then started that one session. The state file had that single session and that env entry, and no pid.
@@ -325,9 +325,10 @@ Fill these in the phase that owns them. Do not leave a default unspoken once tha
 | D2 | PTY from the binding vs a platform PTY wrapper | Phase 0 | Platform wrapper (`PtySession`) | Platform wrapper when the binding PTY is missing or cannot spawn a shell. |
 | D3 | `net9.0` vs `net10.0` | Phase 0 | net10.0 | `net9.0` unless Terminal.Gui v2 or the chosen binding requires `net10.0`. |
 | D4 | Scrollback lives in libghostty-vt or a mirrored buffer | Note in Phase 1, act in Phase 3 | VT viewport. `MaxScrollbackLines` is 10_000. Shift+PageUp and Shift+PageDown call `ScrollViewportBy`. Shift+Home and Shift+End call `ScrollViewportToTop` and `ScrollViewportToBottom`. There is no second buffer. | Use VT history if it exists. Do not mirror unless dogfood fails without it. |
-| D5 | Mouse in v1 | Phase 3 | Off. The keyboard supervise flow, including close, templates, scroll, and paste, works without a mouse handler. | Not required. |
+| D5 | Mouse in v1 | Phase 3 | Wheel only. Over the grid it scrolls history, sends arrows on the alternate screen, or forwards wheel events when the program tracks the mouse. Clicks and drags stay with the app. | Not required. |
 | D6 | Default command for a new session | Phase 2 | `$SHELL`, selected in the new-session dialog so it can be replaced before Start. Last-used command stays a Phase 3 template. | `$SHELL`, editable before start. Last-used command is a template concern, not the default. |
 | D7 | Open in `$EDITOR` from Files | Phase 2, else Phase 3 | Deferred. Terminal.Gui owns the host tty, so a real `$EDITOR` would mean suspending the TUI and restoring it. That is past spawn-and-return. No editor is embedded. | Yes, if it is spawn-and-return. Otherwise defer; do not block Phase 2. |
+| D8 | Which keys stay with the app while a terminal is live | Phase 3 | Ctrl+B is the leader. The next key is an app command, and the leader times out after 3 seconds. Ctrl+B Ctrl+B sends Ctrl+B to the program. A live terminal also keeps Ctrl+Shift+C, Ctrl+Shift+V, Shift+PageUp, Shift+PageDown, Shift+Home, and Shift+End. Every other key, including Ctrl+Q, goes to the program. Outside a live terminal the direct keys still run, and quitting asks first while a session is running. `leader` in `~/.config/my-tui/config.json` can replace Ctrl+B. | Ctrl+B, with Ctrl+B Ctrl+B to send it through. |
 
 ### Phase 0 record (fill when 0.4 is done)
 
@@ -382,10 +383,10 @@ Write gaps here at the end of Phase 1 and again after Phase 3.5. A gap that is n
 | Gap | Found in | Blocks v1? | Resolution |
 |-----|----------|------------|------------|
 | Truecolor | Phase 1 | No | Cells carry RGB and that RGB is what Terminal.Gui draws. The host terminal decides how it quantizes. |
-| Ligatures and wide graphemes | Phase 1 | No | One host cell per VT cell. A wide character’s spacer tail is drawn as a space. |
-| Mouse | Phase 1 | No | Stays off for v1. D5. |
+| Ligatures and wide graphemes | Phase 1 | No | A wide glyph’s spacer tail is not drawn when the host measures the head as two columns. A grapheme with more than one rune is drawn whole. Ligatures are still one host cell per VT cell. |
+| Mouse | Phase 1 | No | Wheel only, over the grid. Clicks and drags stay with the app. D5. |
 | Scrollback UI | Phase 1 | No | Closed in Phase 3. The viewport moves inside the VT. D4. |
-| Host eats Ctrl+Shift+C | Phase 3 | No | Copy of the visible text is Ctrl+Shift+C when that chord reaches the app. A host that keeps the chord for itself never delivers it. Bracketed paste from the host is the paste path that was driven. |
+| Host eats Ctrl+Shift+C | Phase 3 | No | Copy of the visible text is Ctrl+Shift+C when that chord reaches the app. A host that keeps the chord for itself never delivers it. Ctrl+B c and Ctrl+B v copy and paste on that host. Bracketed paste from the host is the paste path that was driven. |
 
 ---
 

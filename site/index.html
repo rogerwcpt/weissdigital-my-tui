@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>my-tui — Weiss Digital</title>
+  <meta name="description" content="my-tui is a terminal-first session orchestrator by Weiss Digital. Several shells, side by side, with the files they are working in.">
+  <meta name="theme-color" content="#161616">
+  <link rel="icon" href="logo.jpg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="sheet">
+    <header class="mast">
+      <p class="brand">Weiss Digital</p>
+      <p class="running">my-tui</p>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h1>my-tui</h1>
+        <div class="hero-row">
+          <img class="mark" src="logo.jpg" width="1024" height="1024" alt="">
+          <p class="lead">Several shells, side by side, with the files they are working in.</p>
+        </div>
+        <img class="shot" src="screenshot.png" alt="my-tui running pi, with the session list on the left and the terminal on the right." />
+      </section>
+
+      <section class="chapter" aria-labelledby="get">
+        <h2 id="get">What you get</h2>
+        <p class="deck">A text interface that runs inside the terminal you already use.</p>
+        <div class="motif" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="panes">
+          <article class="pane">
+            <h3>Session list</h3>
+            <p>Each session is a command you choose, usually your shell. The list is restored from <code>~/.config/<wbr><span class="keep">my-tui</span>/<wbr>state.json</code>. Nothing starts until you press Enter.</p>
+          </article>
+          <div class="pane pane-work">
+            <article>
+              <h3>Terminal</h3>
+              <p>The focused session has a live terminal. Sessions you are not looking at keep running.</p>
+            </article>
+            <article>
+              <h3>Files</h3>
+              <p>A tree of the working directory for that session.</p>
+            </article>
+          </div>
+          <article class="pane">
+            <h3>Preview</h3>
+            <p>The file you select, in a panel beside the terminal. It stays open while you use the terminal.</p>
+          </article>
+        </div>
+      </section>
+
+      <div class="spread">
+        <section class="chapter" aria-labelledby="not">
+          <h2 id="not">What it is not</h2>
+          <p class="deck">These are left out on purpose.</p>
+          <ul>
+            <li>No agent harness, and no model integration</li>
+            <li>No accounts, login, upgrade prompts, or telemetry</li>
+            <li>No git, worktrees, or branching UI</li>
+            <li>No embedded browser</li>
+            <li>No attempt to replace Ghostty as a daily terminal</li>
+          </ul>
+        </section>
+
+        <section class="chapter" aria-labelledby="run">
+          <h2 id="run">Run</h2>
+          <pre><code>dotnet run --project src/MyTui</code></pre>
+          <p>From the source tree. A published build is a folder: run <code>my-tui</code> from that folder. On macOS, <code>libmytui_pty.dylib</code> has to stay next to <code>my-tui</code>. There is no Homebrew formula.</p>
+        </section>
+      </div>
+    </main>
+
+    <footer class="colophon">
+      <p>Weiss Digital</p>
+      <p><a href="https://github.com/rogerwcpt/weissdigital-my-tui">github.com/rogerwcpt/weissdigital-my-tui</a></p>
+    </footer>
+  </div>
+</body>
+</html>
