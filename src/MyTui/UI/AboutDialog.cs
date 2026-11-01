@@ -12,11 +12,14 @@ internal static class AboutDialog
         {
             Title = "About",
             Width = 52,
-            Height = 9,
+            Height = 13,
         };
-        dialog.Add(Line(0, "my-tui"));
-        dialog.Add(Line(2, "A terminal-first session orchestrator."));
-        dialog.Add(Line(4, "Weiss Digital"));
+        dialog.Add(Line(0, "  ╭──┬──────┬──╮"));
+        dialog.Add(Line(1, "  │  │  ▮   │  │"));
+        dialog.Add(Line(2, "  ╰──┴──────┴──╯"));
+        dialog.Add(Line(4, "my-tui"));
+        dialog.Add(Line(6, "A terminal-first session orchestrator."));
+        dialog.Add(Line(8, "Weiss Digital"));
         dialog.AddButton(new Button { Text = "Close" });
         CloseDialog.CancelOnEsc(dialog, app);
         try

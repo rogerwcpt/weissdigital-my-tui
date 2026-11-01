@@ -75,32 +75,6 @@ public class WorkspaceLayoutTests
     }
 }
 
-public class PanelKeyTests
-{
-    [Fact]
-    public void CtrlTabCyclesForwardAndBack()
-    {
-        Assert.True(SessionScreen.IsPanelCycle(Key.Tab.WithCtrl));
-        Assert.False(Key.Tab.WithCtrl.IsShift);
-        Assert.True(SessionScreen.IsPanelCycle(Key.Tab.WithCtrl.WithShift));
-        Assert.True(Key.Tab.WithCtrl.WithShift.IsShift);
-        Assert.False(SessionScreen.IsPanelCycle(Key.Tab));
-        Assert.False(SessionScreen.IsPanelCycle(Key.Tab.WithShift));
-        Assert.False(SessionScreen.IsPanelCycle(Key.Tab.WithCtrl.WithAlt));
-    }
-
-    [Fact]
-    public void F4HidesSessionsAndF11Maximizes()
-    {
-        Assert.True(SessionScreen.IsHideSessions(Key.F4));
-        Assert.False(SessionScreen.IsHideSessions(Key.F4.WithCtrl));
-        Assert.False(SessionScreen.IsHideSessions(Key.F4.WithShift));
-        Assert.True(SessionScreen.IsMaximizePanel(Key.F11));
-        Assert.False(SessionScreen.IsMaximizePanel(Key.F11.WithAlt));
-        Assert.False(SessionScreen.IsMaximizePanel(Key.F6));
-    }
-}
-
 public class ActiveRowTests
 {
     [Fact]

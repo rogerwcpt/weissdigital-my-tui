@@ -15,12 +15,16 @@ internal static class HostTheme
 
     internal static void Apply()
     {
-        if (ColorEnabled)
+        // Dialog, menu, and error views ship with a blue scheme. The window already uses the
+        // terminal's own colors, so these do too: Color.None, with reverse for the focused control.
+        Scheme terminal = Plain();
+        SchemeManager.AddScheme("Dialog", terminal);
+        SchemeManager.AddScheme("Menu", terminal);
+        SchemeManager.AddScheme("Error", terminal);
+        if (!ColorEnabled)
         {
-            return;
+            SchemeManager.AddScheme("Base", terminal);
         }
-
-        SchemeManager.AddScheme("Base", Plain());
     }
 
     internal static Scheme Plain()

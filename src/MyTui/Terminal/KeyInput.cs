@@ -18,16 +18,8 @@ internal static class KeyInput
     internal const ushort Control = 2;
     internal const ushort Alt = 4;
 
-    internal static bool IsReserved(Key key) =>
-        !key.IsAlt && !key.IsShift && (key == Key.Q.WithCtrl || key == Key.N.WithCtrl || key == Key.O.WithCtrl);
-
     internal static byte[]? Encode(VtTerminal terminal, KeyEncoder encoder, Key key)
     {
-        if (IsReserved(key))
-        {
-            return null;
-        }
-
         if (!TryDescribe(key, out GhosttyKey ghostty, out string? text, out ushort modifiers))
         {
             if (!key.IsCtrl && !key.IsAlt && key.TryGetPrintableRune(out Rune rune))

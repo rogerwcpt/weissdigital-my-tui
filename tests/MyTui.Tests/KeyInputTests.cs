@@ -78,12 +78,14 @@ public class KeyInputTests
     }
 
     [Fact]
-    public void ReservedChords_AreNotEncoded()
+    public void ShellChordsReachTheChild()
     {
         using var terminal = new VtTerminal(80, 24);
         using var encoder = new KeyEncoder();
-        Assert.Null(KeyInput.Encode(terminal, encoder, Key.Q.WithCtrl));
-        Assert.Null(KeyInput.Encode(terminal, encoder, Key.N.WithCtrl));
-        Assert.Null(KeyInput.Encode(terminal, encoder, Key.O.WithCtrl));
+        Assert.Equal(new byte[] { 0x11 }, KeyInput.Encode(terminal, encoder, Key.Q.WithCtrl));
+        Assert.Equal(new byte[] { 0x0e }, KeyInput.Encode(terminal, encoder, Key.N.WithCtrl));
+        Assert.Equal(new byte[] { 0x0f }, KeyInput.Encode(terminal, encoder, Key.O.WithCtrl));
+        Assert.Equal(new byte[] { 0x12 }, KeyInput.Encode(terminal, encoder, Key.R.WithCtrl));
+        Assert.Equal(new byte[] { 0x05 }, KeyInput.Encode(terminal, encoder, Key.E.WithCtrl));
     }
 }

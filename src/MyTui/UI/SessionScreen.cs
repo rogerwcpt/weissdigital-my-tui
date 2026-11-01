@@ -34,8 +34,12 @@ internal sealed class SessionScreen : IDisposable
     private readonly PreviewTextView _text;
     private readonly Label _note;
     private readonly Label _hint;
-    private readonly Label _status;
+    private readonly Label _commands;
     private readonly FramePacer _pacer = new();
+    private readonly LeaderState _leader = new();
+    private readonly HashSet<Session> _unseen = [];
+    private readonly HashSet<Session> _rang = [];
+    private readonly Dictionary<Session, long> _quietUntil = [];
     private SessionManager? _manager;
     private string _root = "";
     private object? _timeout;
@@ -47,7 +51,6 @@ internal sealed class SessionScreen : IDisposable
     private bool _updating;
     private bool _modal;
     private bool _disposed;
-    private readonly PopoverMenu _menu;
 
     /// <summary>
     /// Mac Delete is Backspace. Forward delete is Delete or DeleteChar. Any of them closes from outside a live terminal.
@@ -55,15 +58,6 @@ internal sealed class SessionScreen : IDisposable
     internal static bool IsCloseKey(Key key) =>
         !key.IsCtrl && !key.IsAlt && !key.IsShift
         && (key == Key.Backspace || key == Key.Delete || key == Key.DeleteChar);
-
-    internal static bool IsPanelCycle(Key key) =>
-        !key.IsAlt && (key == Key.Tab.WithCtrl || key == Key.Tab.WithCtrl.WithShift);
-
-    internal static bool IsHideSessions(Key key) =>
-        key == Key.F4 && !key.IsCtrl && !key.IsAlt && !key.IsShift;
-
-    internal static bool IsMaximizePanel(Key key) =>
-        key == Key.F11 && !key.IsCtrl && !key.IsAlt && !key.IsShift;
 
     /// <summary>Selected session row, with a close mark in the last column.</summary>
     internal static string ActiveRow(string label, int width)
@@ -83,6 +77,43 @@ internal sealed class SessionScreen : IDisposable
         return string.Concat(runes) + new string(' ', spaces) + "\u00d7";
     }
 
+    internal static string ActivityLabel(string label, bool unseen, bool bell)
+    {
+        if (bell)
+        {
+            return label + " !";
+        }
+
+        return unseen ? label + " ●" : label;
+    }
+
+    internal static string StatusRow(string details, string hint, int width)
+    {
+        if (width < 1 || string.IsNullOrEmpty(hint) || width < hint.Length + 12)
+        {
+            return FitWidth(details, Math.Max(width, 0));
+        }
+
+        int room = width - hint.Length;
+        string left = details.Length < room ? details : FitWidth(details, room - 1);
+        return left.PadRight(room) + hint;
+    }
+
+    private static string FitWidth(string text, int width)
+    {
+        if (width <= 0)
+        {
+            return "";
+        }
+
+        if (text.Length <= width)
+        {
+            return text;
+        }
+
+        return width == 1 ? "…" : text[..(width - 1)] + "…";
+    }
+
     internal SessionScreen(IApplication app)
     {
         _app = app;
@@ -94,7 +125,7 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = 1,
             CanFocus = false,
-            Text = "Ctrl+N creates a session. F1 opens the menu.",
+            Text = "Ctrl+N creates a session. Ctrl+Shift+P opens commands.",
         };
         _tree = new FileTree(this, new DelegateTreeBuilder<FileNode>(
             node => Workspace.Children(_root, node.Path),
@@ -170,11 +201,14 @@ internal sealed class SessionScreen : IDisposable
             X = 0,
             Y = 0,
             Width = 0,
-            Height = Dim.Fill(1),
+            Height = Dim.Fill(),
             Visible = false,
             CanFocus = true,
         };
         _terminal.Add(_grid, _hint);
+        // A click redraws a frame and clears the area under it. The grid would then skip
+        // cells it still has cached. A parent clear has to schedule a full paint first.
+        _terminal.ClearingViewport += (_, _) => _grid.Repaint();
         _files.Add(_tree, _filesNote);
         _preview.Add(_markdown, _text, _note);
         Wire(_markdown);
@@ -188,26 +222,17 @@ internal sealed class SessionScreen : IDisposable
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(1),
+            Height = Dim.Fill(),
         };
         _tabs.Add(_terminal, _files);
         _tabs.ValueChanged += (_, args) => OnTabChanged(args.NewValue);
         Wire(_tabs);
-        _status = new Label
-        {
-            X = 0,
-            Y = Pos.AnchorEnd(1),
-            Width = Dim.Fill(),
-            Height = 1,
-            CanFocus = false,
-            Text = "Ctrl+N creates a session. F1 opens the menu.",
-        };
         _list = new SessionList(this)
         {
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(),
+            Height = Dim.Fill(2),
         };
         _list.SetSource(_labels);
         _list.ValueChanged += (_, args) =>
@@ -220,24 +245,6 @@ internal sealed class SessionScreen : IDisposable
             ShowSession(index);
         };
 
-        _menu = new PopoverMenu(new MenuItem[]
-        {
-            new("_Open Folder", Key.Empty, OpenFolder),
-            new("_Keystrokes", Key.Empty, ShowHelp),
-            new("_About", Key.Empty, ShowAbout),
-            new("_Quit", Key.Q.WithCtrl, () => _app.RequestStop()),
-        })
-        {
-            App = _app,
-        };
-        _menu.KeyDown += (_, key) =>
-        {
-            if (key == Key.F1 && !key.IsCtrl && !key.IsAlt && !key.IsShift)
-            {
-                _app.Popovers?.Hide(_menu);
-                key.Handled = true;
-            }
-        };
         Sessions = new FrameView
         {
             Title = "Sessions",
@@ -246,7 +253,16 @@ internal sealed class SessionScreen : IDisposable
             Width = 28,
             Height = Dim.Fill(),
         };
-        Sessions.Add(_list);
+        _commands = new Label
+        {
+            X = 0,
+            Y = Pos.AnchorEnd(1),
+            Width = Dim.Fill(),
+            Height = 1,
+            CanFocus = false,
+            Text = CommandPalette.Footer,
+        };
+        Sessions.Add(_list, new PaletteRule(), _commands);
         Content = new FrameView
         {
             Title = "Session",
@@ -255,15 +271,31 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = Dim.Fill(),
         };
-        Content.Add(_tabs, _preview, _status);
+        Content.Add(_tabs, _preview);
+        Content.ClearingViewport += (_, _) => _grid.Repaint();
         _sessionsCaption = PanelCaption.Attach(Sessions, () => ToggleMaximize(MaximizedPanel.Sessions), ToggleSessions);
-        BorderGlyph.Place(Sessions, '+', atEnd: true, NewSession);
+        BorderGlyph.Place(Sessions, '+', atEnd: true, NewSession, boxed: true);
         _contentCaption = PanelCaption.Attach(Content, () => ToggleMaximize(MaximizedPanel.Content), MinimizeContent);
         _previewCaption = PanelCaption.Attach(_preview, () => ToggleMaximize(MaximizedPanel.Preview), MinimizePreview);
         ApplyLayout();
     }
 
-    internal void AttachTitle(Window window) => TitleBar.Attach(window, ToggleMenu);
+    internal void AttachTitle(Window window)
+    {
+        TitleBar.Attach(window, ShowPalette);
+        window.ClearingViewport += (_, _) => _grid.Repaint();
+        window.KeyDown += (_, key) =>
+        {
+            // A live terminal consumes Ctrl+Q and may still bubble the same event.
+            if (key.Handled || _modal || key != Key.Q.WithCtrl || key.IsAlt || key.IsShift)
+            {
+                return;
+            }
+
+            RequestQuit();
+            key.Handled = true;
+        };
+    }
 
     internal FrameView Sessions { get; }
 
@@ -276,6 +308,7 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
+        AppKeys.Load();
         _manager = SessionManager.Load(StateStore.DefaultPath());
         RefreshLabels();
         if (_manager.Sessions.Count > 0)
@@ -294,87 +327,111 @@ internal sealed class SessionScreen : IDisposable
         _app.Iteration += OnIteration;
     }
 
-    internal bool HandleChord(Key key)
+    internal bool HandleChord(Key key) => HandleChord(key, inTerminal: false);
+
+    internal bool HandleChord(Key key, bool inTerminal)
     {
-        if (key == Key.N.WithCtrl && !key.IsAlt && !key.IsShift)
+        KeyRoute route = AppKeys.Route(key, inTerminal, _leader, Environment.TickCount64, out AppCommand command);
+        if (route == KeyRoute.Forward)
         {
-            NewSession();
-            return true;
+            return false;
         }
 
-        if (key == Key.O.WithCtrl && !key.IsAlt && !key.IsShift)
+        if (route == KeyRoute.Run)
         {
-            ToggleFocus();
-            return true;
+            Run(command);
         }
 
-        if (IsPanelCycle(key))
+        UpdateStatus();
+        return true;
+    }
+
+    private void Run(AppCommand command)
+    {
+        switch (command)
         {
-            CyclePanels(!key.IsShift);
-            return true;
+            case AppCommand.Menu:
+                ShowPalette();
+                break;
+            case AppCommand.NewSession:
+                NewSession();
+                break;
+            case AppCommand.CycleFocus:
+                ToggleFocus();
+                break;
+            case AppCommand.NextPanel:
+                CyclePanels(forward: true);
+                break;
+            case AppCommand.PreviousPanel:
+                CyclePanels(forward: false);
+                break;
+            case AppCommand.HideSessions:
+                ToggleSessions();
+                break;
+            case AppCommand.Maximize:
+                ToggleMaximize(PanelUnderFocus());
+                break;
+            case AppCommand.CycleTab:
+                CycleTab();
+                break;
+            case AppCommand.Preview:
+                TogglePreview();
+                break;
+            case AppCommand.Edit:
+                EditSession();
+                break;
+            case AppCommand.Refresh:
+                RefreshFiles();
+                break;
+            case AppCommand.Templates:
+                Templates();
+                break;
+            case AppCommand.Close:
+                CloseSelected();
+                break;
+            case AppCommand.Copy:
+                CopyVisible();
+                break;
+            case AppCommand.Paste:
+                PasteClipboard();
+                break;
+            case AppCommand.Help:
+                ShowPalette();
+                break;
+            case AppCommand.Quit:
+                RequestQuit();
+                break;
+        }
+    }
+
+    private void RequestQuit()
+    {
+        if (_modal || _manager is null)
+        {
+            return;
         }
 
-        if (IsHideSessions(key))
+        int running = _manager.Sessions.Count(session => session.IsRunning);
+        if (running > 0)
         {
-            ToggleSessions();
-            return true;
+            HoldModal();
+            bool quit;
+            try
+            {
+                quit = CloseDialog.ConfirmQuit(_app, running);
+            }
+            finally
+            {
+                ReleaseModal();
+            }
+
+            if (!quit)
+            {
+                return;
+            }
         }
 
-        if (IsMaximizePanel(key))
-        {
-            ToggleMaximize(PanelUnderFocus());
-            return true;
-        }
-
-        if (key == Key.T.WithCtrl && !key.IsAlt && !key.IsShift)
-        {
-            CycleTab();
-            return true;
-        }
-
-        if (key == Key.P.WithCtrl && !key.IsAlt && !key.IsShift)
-        {
-            TogglePreview();
-            return true;
-        }
-
-        if (key == Key.E.WithCtrl && !key.IsAlt && !key.IsShift)
-        {
-            EditSession();
-            return true;
-        }
-
-        if (key == Key.R.WithCtrl && !key.IsAlt && !key.IsShift)
-        {
-            RefreshFiles();
-            return true;
-        }
-
-        if (key == Key.F1 && !key.IsCtrl && !key.IsAlt && !key.IsShift)
-        {
-            ToggleMenu();
-            return true;
-        }
-
-        if (key == Key.F2 && !key.IsCtrl && !key.IsAlt && !key.IsShift)
-        {
-            Templates();
-            return true;
-        }
-
-        if (key == Key.C.WithCtrl.WithShift && !key.IsAlt)
-        {
-            CopyVisible();
-            return true;
-        }
-
-        if (key == Key.V.WithCtrl.WithShift && !key.IsAlt)
-        {
-            PasteClipboard();
-            return true;
-        }
-
-        return false;
+        _app.RequestStop();
     }
 
     internal void NewSession() => BeginNew(null);
@@ -393,7 +450,7 @@ internal sealed class SessionScreen : IDisposable
         }
         catch (InvalidOperationException ex)
         {
-            _status.Text = ex.Message;
+            _commands.Text = ex.Message;
             return;
         }
 
@@ -423,6 +480,7 @@ internal sealed class SessionScreen : IDisposable
         try
         {
             session.Start(Columns(), Rows());
+            NoteStarted(session);
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or PlatformNotSupportedException)
         {
@@ -455,7 +513,7 @@ internal sealed class SessionScreen : IDisposable
             }
             catch (InvalidOperationException ex)
             {
-                _status.Text = ex.Message;
+                _commands.Text = ex.Message;
                 return;
             }
 
@@ -487,6 +545,7 @@ internal sealed class SessionScreen : IDisposable
         try
         {
             session.Start(Columns(), Rows());
+            NoteStarted(session);
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or PlatformNotSupportedException)
         {
@@ -546,6 +605,7 @@ internal sealed class SessionScreen : IDisposable
         }
 
         _manager.Close(session);
+        Forget(session);
         RefreshLabels();
         if (_manager.Sessions.Count == 0)
         {
@@ -666,21 +726,78 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
-    private void ShowHelp()
+    private void ShowPalette()
     {
         if (_modal)
         {
             return;
         }
 
+        _commands.Text = CommandPalette.Footer;
         HoldModal();
+        string? id;
         try
         {
-            HelpDialog.Show(_app);
+            id = CommandPalette.Ask(_app);
         }
         finally
         {
             ReleaseModal();
+        }
+
+        switch (id)
+        {
+            case "new":
+                NewSession();
+                break;
+            case "open":
+                OpenFolder();
+                break;
+            case "focus":
+                ToggleFocus();
+                break;
+            case "next":
+                CyclePanels(forward: true);
+                break;
+            case "previous":
+                CyclePanels(forward: false);
+                break;
+            case "hide":
+                ToggleSessions();
+                break;
+            case "maximize":
+                ToggleMaximize(PanelUnderFocus());
+                break;
+            case "tab":
+                CycleTab();
+                break;
+            case "preview":
+                TogglePreview();
+                break;
+            case "edit":
+                EditSession();
+                break;
+            case "refresh":
+                RefreshFiles();
+                break;
+            case "templates":
+                Templates();
+                break;
+            case "close":
+                CloseSelected();
+                break;
+            case "copy":
+                CopyVisible();
+                break;
+            case "paste":
+                PasteClipboard();
+                break;
+            case "about":
+                ShowAbout();
+                break;
+            case "quit":
+                RequestQuit();
+                break;
         }
     }
 
@@ -716,7 +833,7 @@ internal sealed class SessionScreen : IDisposable
             {
                 if (_manager.Focused is not Session session)
                 {
-                    _status.Text = "No session to save.";
+                    _commands.Text = "No session to save.";
                     return;
                 }
 
@@ -806,6 +923,7 @@ internal sealed class SessionScreen : IDisposable
         try
         {
             session.Start(Columns(), Rows());
+            NoteStarted(session);
             _grid.Session = session.Terminal;
             _grid.Live = session.Tab == SessionTab.Terminal;
         }
@@ -861,6 +979,8 @@ internal sealed class SessionScreen : IDisposable
         bool listHadFocus = _list.HasFocus;
         _manager.Focus(index);
         Session session = _manager.Sessions[index];
+        _unseen.Remove(session);
+        _rang.Remove(session);
         if (session.Tab == SessionTab.Preview)
         {
             _previewOpen = true;
@@ -899,6 +1019,10 @@ internal sealed class SessionScreen : IDisposable
         _updating = true;
         _tabs.Value = _panes[(int)tab];
         _updating = false;
+        if (tab == SessionTab.Terminal)
+        {
+            _grid.Repaint();
+        }
     }
 
     private void OnTabChanged(View? view)
@@ -920,6 +1044,10 @@ internal sealed class SessionScreen : IDisposable
         if (tab == SessionTab.Files)
         {
             RefreshFiles();
+        }
+        else
+        {
+            _grid.Repaint();
         }
 
         FocusPane();
@@ -1177,10 +1305,9 @@ internal sealed class SessionScreen : IDisposable
         Content.Height = Dim.Fill();
 
         _tabs.Visible = layout.TabsVisible;
-        _status.Visible = layout.TabsVisible;
         _tabs.X = 0;
         _tabs.Y = 0;
-        _tabs.Height = Dim.Fill(1);
+        _tabs.Height = Dim.Fill();
 
         if (layout.PreviewFill)
         {
@@ -1197,7 +1324,7 @@ internal sealed class SessionScreen : IDisposable
             _preview.X = Pos.Right(_tabs);
             _preview.Y = 0;
             _preview.Width = Dim.Fill();
-            _preview.Height = Dim.Fill(1);
+            _preview.Height = Dim.Fill();
         }
         else
         {
@@ -1349,28 +1476,12 @@ internal sealed class SessionScreen : IDisposable
         _updating = false;
     }
 
-    private void ToggleMenu()
-    {
-        if (_modal)
-        {
-            return;
-        }
-
-        if (_menu.Visible)
-        {
-            _app.Popovers?.Hide(_menu);
-            return;
-        }
-
-        _menu.MakeVisible(new System.Drawing.Point(1, 1));
-    }
-
     private string RowText(Session session, int index)
     {
         string label = session.ListLabel;
         if (_manager is null || index != _manager.FocusedIndex)
         {
-            return label;
+            return ActivityLabel(label, _unseen.Contains(session), _rang.Contains(session));
         }
 
         return ActiveRow(label, _list.Viewport.Width);
@@ -1392,26 +1503,19 @@ internal sealed class SessionScreen : IDisposable
 
     private void UpdateStatus()
     {
-        string text = _manager?.Focused is Session session
-            ? session.StatusLine
-            : "Ctrl+N creates a session. F1 opens the menu.";
-        if (text == _status.Text)
-        {
-            return;
-        }
-
-        _status.Text = text;
     }
 
     private void HoldModal()
     {
         _modal = true;
+        _grid.Covered = true;
         _grid.Repaint();
     }
 
     private void ReleaseModal()
     {
         _modal = false;
+        _grid.Covered = false;
         _grid.Repaint();
     }
 
@@ -1470,6 +1574,7 @@ internal sealed class SessionScreen : IDisposable
         UpdateStatus();
         ResizeActive();
         TerminalSession? active = _grid.Session;
+        NoteActivity(active);
         if (active is null)
         {
             return true;
@@ -1488,15 +1593,68 @@ internal sealed class SessionScreen : IDisposable
             _grid.SetNeedsDraw();
         }
 
-        foreach (Session session in _manager.Sessions)
+        return true;
+    }
+
+    private void NoteStarted(Session session)
+    {
+        if (session.Terminal is TerminalSession terminal)
         {
-            if (session.Terminal is TerminalSession other && !ReferenceEquals(other, active))
-            {
-                other.ConsumeDirty();
-            }
+            terminal.ConsumeDirty();
+            terminal.ConsumeBell();
         }
 
-        return true;
+        _unseen.Remove(session);
+        _rang.Remove(session);
+        _quietUntil[session] = Environment.TickCount64 + 1000;
+    }
+
+    private void Forget(Session session)
+    {
+        _unseen.Remove(session);
+        _rang.Remove(session);
+        _quietUntil.Remove(session);
+    }
+
+    private void NoteActivity(TerminalSession? active)
+    {
+        if (_manager is null)
+        {
+            return;
+        }
+
+        long now = Environment.TickCount64;
+        foreach (Session session in _manager.Sessions)
+        {
+            if (session.Terminal is not TerminalSession terminal)
+            {
+                continue;
+            }
+
+            bool bell = terminal.ConsumeBell();
+            if (active is not null && ReferenceEquals(terminal, active))
+            {
+                continue;
+            }
+
+            bool quiet = _quietUntil.TryGetValue(session, out long until) && now < until;
+            if (quiet)
+            {
+                terminal.ConsumeDirty();
+                continue;
+            }
+
+            if (bell)
+            {
+                _rang.Add(session);
+            }
+
+            if (terminal.IsDirty)
+            {
+                _unseen.Add(session);
+                terminal.ConsumeDirty();
+            }
+        }
     }
 
     /// <summary>
@@ -1543,37 +1701,37 @@ internal sealed class SessionScreen : IDisposable
 
         protected override bool OnKeyDown(Key key)
         {
-            if (key == Key.Q.WithCtrl && !key.IsAlt && !key.IsShift)
-            {
-                return false;
-            }
-
             if (_screen.HandleChord(key))
             {
+                key.Handled = true;
                 return true;
             }
 
             if (IsCloseKey(key))
             {
                 _screen.CloseSelected();
+                key.Handled = true;
                 return true;
             }
 
             if (key == Key.Enter)
             {
                 _screen.FocusPane();
+                key.Handled = true;
                 return true;
             }
 
             if (key == Key.CursorUp.WithAlt && !key.IsCtrl && !key.IsShift)
             {
                 _screen.MoveFocused(-1);
+                key.Handled = true;
                 return true;
             }
 
             if (key == Key.CursorDown.WithAlt && !key.IsCtrl && !key.IsShift)
             {
                 _screen.MoveFocused(1);
+                key.Handled = true;
                 return true;
             }
 
@@ -1608,19 +1766,16 @@ internal sealed class SessionScreen : IDisposable
 
         protected override bool OnKeyDown(Key key)
         {
-            if (key == Key.Q.WithCtrl && !key.IsAlt && !key.IsShift)
-            {
-                return false;
-            }
-
             if (_screen.HandleChord(key))
             {
+                key.Handled = true;
                 return true;
             }
 
             if (IsCloseKey(key))
             {
                 _screen.CloseSelected();
+                key.Handled = true;
                 return true;
             }
 

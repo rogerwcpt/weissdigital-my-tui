@@ -1,6 +1,7 @@
 using System.Text;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.Text;
 using Terminal.Gui.ViewBase;
 using MyTui.Terminal;
 using TuiAttribute = Terminal.Gui.Drawing.Attribute;
@@ -20,7 +21,7 @@ internal sealed class CellGridView : View
     private int _cachedCursorX = -1;
     private int _cachedCursorY = -1;
 
-    internal CellGridView(Func<Key, bool> chords, Action start, Action close)
+    internal CellGridView(Func<Key, bool, bool> chords, Action start, Action close)
     {
         _chords = chords;
         _start = start;
@@ -35,7 +36,7 @@ internal sealed class CellGridView : View
     /// <summary>Resize the PTY only while the Terminal tab is the one on screen.</summary>
     internal bool Live { get; set; } = true;
 
-    private Func<Key, bool> _chords { get; }
+    private Func<Key, bool, bool> _chords { get; }
 
     private Action _start { get; }
 
@@ -56,7 +57,10 @@ internal sealed class CellGridView : View
         }
     }
 
-    /// <summary>Next paint writes every cell. Used after a dialog has covered the grid.</summary>
+    /// <summary>A dialog is covering the grid. A paint in that state must not update the cache.</summary>
+    internal bool Covered { get; set; }
+
+    /// <summary>Next paint writes every cell. Used after a dialog or another tab has covered the grid.</summary>
     internal void Repaint()
     {
         _forceFull = true;
@@ -105,12 +109,10 @@ internal sealed class CellGridView : View
 
     protected override bool OnKeyDown(Key key)
     {
-        if (key == Key.Q.WithCtrl && !key.IsAlt && !key.IsShift)
-        {
-            return false;
-        }
-
-        if (_chords(key))
+        // Every path below consumes the key. Handled stops a bubbled Ctrl+Q from also quitting.
+        key.Handled = true;
+        bool idle = _session is null || _session.HasExited || !_session.IsRunning;
+        if (_chords(key, !idle))
         {
             return true;
         }
@@ -143,7 +145,6 @@ internal sealed class CellGridView : View
             }
         }
 
-        bool idle = _session is null || _session.HasExited || !_session.IsRunning;
         if (idle && key == Key.Enter)
         {
             _start();
@@ -187,12 +188,54 @@ internal sealed class CellGridView : View
         return true;
     }
 
+    protected override bool OnMouseEvent(Mouse mouse)
+    {
+        bool up = mouse.Flags.HasFlag(MouseFlags.WheeledUp);
+        bool down = mouse.Flags.HasFlag(MouseFlags.WheeledDown);
+        if (!up && !down)
+        {
+            return base.OnMouseEvent(mouse);
+        }
+
+        if (_session is not TerminalSession session)
+        {
+            return true;
+        }
+
+        int column = mouse.Position is { } position ? Math.Clamp((int)position.X, 0, Math.Max(0, Viewport.Width - 1)) : 0;
+        int row = mouse.Position is { } point ? Math.Clamp((int)point.Y, 0, Math.Max(0, Viewport.Height - 1)) : 0;
+        if (session.HasExited || !session.IsRunning)
+        {
+            session.ScrollBy(up ? -3 : 3);
+            return true;
+        }
+
+        byte[]? bytes = session.Wheel(up, column, row, out bool scroll);
+        if (scroll)
+        {
+            session.ScrollBy(up ? -3 : 3);
+        }
+        else if (bytes is { Length: > 0 })
+        {
+            session.Write(bytes);
+        }
+
+        return true;
+    }
+
     protected override bool OnDrawingContent(DrawContext? context)
     {
+        if (Covered)
+        {
+            _forceFull = true;
+            return true;
+        }
+
         int width = Viewport.Width;
         int height = Viewport.Height;
         if (width < 1 || height < 1)
         {
+            _forceFull = true;
             return true;
         }
 
@@ -225,6 +268,11 @@ internal sealed class CellGridView : View
                 }
 
                 _cache[index] = cell;
+                if (cell.WideTail && column > 0 && (frame?.Cell(column - 1, row).Grapheme.GetColumns(false) ?? 0) > 1)
+                {
+                    continue;
+                }
+
                 TuiAttribute attribute = AttributeFor(cell, cursor, color);
                 if (ink is null || !ink.Value.Equals(attribute))
                 {
@@ -232,7 +280,14 @@ internal sealed class CellGridView : View
                     ink = attribute;
                 }
 
-                AddRune(column, row, Glyph(cell));
+                if (cell.Grapheme.GetRuneCount() > 1)
+                {
+                    AddStr(column, row, cell.Grapheme);
+                }
+                else
+                {
+                    AddRune(column, row, Glyph(cell));
+                }
             }
         }
 

@@ -40,6 +40,46 @@ internal static class CloseDialog
         }
     }
 
+    internal static bool ConfirmQuit(IApplication app, int running)
+    {
+        string message = running == 1
+            ? "1 session is still running. Quit and stop it?"
+            : running + " sessions are still running. Quit and stop them?";
+        var dialog = new Dialog
+        {
+            Title = "Quit",
+            Width = 62,
+            Height = 7,
+        };
+        dialog.Add(new Label
+        {
+            Text = message,
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = 2,
+            CanFocus = false,
+        });
+        var cancel = new Button { Text = "Cancel" };
+        var quit = new Button { Text = "Quit" };
+        dialog.AddButton(cancel);
+        dialog.AddButton(quit);
+        // The last button added becomes the default, which Enter runs. Cancel has to be that button.
+        quit.IsDefault = false;
+        cancel.IsDefault = true;
+        CancelOnEsc(dialog, app);
+        dialog.Initialized += (_, _) => cancel.SetFocus();
+        try
+        {
+            app.Run(dialog);
+            return dialog.Result == 1;
+        }
+        finally
+        {
+            dialog.Dispose();
+        }
+    }
+
     internal static void CancelOnEsc(Dialog dialog, IApplication app)
     {
         dialog.KeyDown += (_, key) =>

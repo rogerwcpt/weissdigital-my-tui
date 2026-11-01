@@ -7,13 +7,13 @@ using Terminal.Gui.Views;
 namespace MyTui.UI;
 
 /// <summary>
-/// Burger and F1 on the left of the window title, then the app name. Both open the same menu.
+/// Burger on the left of the window title, then the app name. The burger opens the command palette.
 /// </summary>
 internal sealed class TitleBar : View
 {
     internal const char Burger = '\u2261';
 
-    private const string Label = "\u2261 F1  my-tui";
+    private const string Label = "[\u2261] my-tui";
 
     private readonly Action _open;
 
@@ -56,7 +56,7 @@ internal sealed class TitleBar : View
         }
 
         int column = (int)position.X;
-        if (column is 0 or 2 or 3)
+        if (column is 0 or 1 or 2)
         {
             _open();
             return true;
@@ -71,21 +71,23 @@ internal sealed class BorderGlyph : View
 {
     private readonly char _glyph;
     private readonly Action _click;
+    private readonly bool _boxed;
 
-    private BorderGlyph(char glyph, Action click, bool atEnd)
+    private BorderGlyph(char glyph, Action click, bool atEnd, bool boxed)
     {
         _glyph = glyph;
         _click = click;
+        _boxed = boxed;
         CanFocus = false;
         Y = 0;
-        Width = 1;
+        Width = boxed ? 3 : 1;
         Height = 1;
-        X = atEnd ? Pos.AnchorEnd(2) : 1;
+        X = atEnd ? Pos.AnchorEnd(boxed ? 4 : 2) : 1;
     }
 
-    internal static BorderGlyph Place(FrameView frame, char glyph, bool atEnd, Action click)
+    internal static BorderGlyph Place(FrameView frame, char glyph, bool atEnd, Action click, bool boxed = false)
     {
-        var button = new BorderGlyph(glyph, click, atEnd);
+        var button = new BorderGlyph(glyph, click, atEnd, boxed);
         frame.Border.GetOrCreateView().Add(button);
         return button;
     }
@@ -93,7 +95,15 @@ internal sealed class BorderGlyph : View
     protected override bool OnDrawingContent(DrawContext? context)
     {
         SetAttribute(GetAttributeForRole(VisualRole.Normal));
-        AddRune(0, 0, new Rune(_glyph));
+        if (!_boxed)
+        {
+            AddRune(0, 0, new Rune(_glyph));
+            return true;
+        }
+
+        AddRune(0, 0, new Rune('['));
+        AddRune(1, 0, new Rune(_glyph));
+        AddRune(2, 0, new Rune(']'));
         return true;
     }
 

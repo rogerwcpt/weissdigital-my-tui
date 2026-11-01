@@ -21,6 +21,7 @@ internal sealed class TerminalSession : IDisposable
     private PtySession? _pty;
     private string _title = "";
     private int _dirty = 1;
+    private int _bell;
     private bool _disposed;
     private PaintedCell[] _drawA = [];
     private PaintedCell[] _drawB = [];
@@ -222,6 +223,38 @@ internal sealed class TerminalSession : IDisposable
 
     internal bool ConsumeDirty() => Interlocked.Exchange(ref _dirty, 0) == 1;
 
+    internal bool ConsumeBell() => Interlocked.Exchange(ref _bell, 0) == 1;
+
+    /// <summary>Wheel over the grid. Scroll is the shell case. Bytes go straight to the program.</summary>
+    internal byte[]? Wheel(bool up, int column, int row, out bool scroll)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            bool tracking = _vt.ModeGet(TerminalMode.MouseNormal)
+                || _vt.ModeGet(TerminalMode.MouseButton)
+                || _vt.ModeGet(TerminalMode.MouseAny)
+                || _vt.ModeGet(TerminalMode.MouseX10);
+            if (tracking)
+            {
+                scroll = false;
+                return MouseInput.Wheel(up, column, row, _vt.ModeGet(TerminalMode.MouseSGR));
+            }
+
+            bool alternate = _vt.ModeGet(TerminalMode.AltScreen)
+                || _vt.ModeGet(TerminalMode.AltScreenLegacy)
+                || _vt.ModeGet(TerminalMode.AltScreenNoSaveCursor);
+            if (alternate)
+            {
+                scroll = false;
+                return MouseInput.Arrows(up, 3, _vt.ModeGet(TerminalMode.CursorKeys));
+            }
+
+            scroll = true;
+            return null;
+        }
+    }
+
     /// <summary>The child is between CSI ? 2026 h and CSI ? 2026 l, so the screen is half written.</summary>
     internal bool InSynchronizedUpdate
     {
@@ -294,6 +327,7 @@ internal sealed class TerminalSession : IDisposable
         options.MaxScrollbackLines = 10_000;
         options.OnWritePty = WriteReply;
         options.OnTitleChanged = OnTitleChanged;
+        options.OnBell = () => Interlocked.Exchange(ref _bell, 1);
     }
 
     private void OnTitleChanged()
