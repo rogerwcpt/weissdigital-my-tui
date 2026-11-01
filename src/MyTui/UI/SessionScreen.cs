@@ -35,6 +35,7 @@ internal sealed class SessionScreen : IDisposable
     private readonly Label _note;
     private readonly Label _hint;
     private readonly Label _status;
+    private readonly FramePacer _pacer = new();
     private SessionManager? _manager;
     private string _root = "";
     private object? _timeout;
@@ -290,6 +291,7 @@ internal sealed class SessionScreen : IDisposable
 
         _list.SetFocus();
         _timeout = _app.AddTimeout(TimeSpan.FromMilliseconds(30), Tick);
+        _app.Iteration += OnIteration;
     }
 
     internal bool HandleChord(Key key)
@@ -629,6 +631,7 @@ internal sealed class SessionScreen : IDisposable
         }
 
         _disposed = true;
+        _app.Iteration -= OnIteration;
         if (_timeout is not null)
         {
             _app.RemoveTimeout(_timeout);
@@ -1480,7 +1483,7 @@ internal sealed class SessionScreen : IDisposable
             _grid.Blink(phase % 2 == 0);
         }
 
-        if (active.ConsumeDirty() || blink)
+        if (blink)
         {
             _grid.SetNeedsDraw();
         }
@@ -1494,6 +1497,24 @@ internal sealed class SessionScreen : IDisposable
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Runs at the top of every main-loop iteration, before Terminal.Gui lays out and draws,
+    /// so PTY output that arrived since the last frame is painted in this one.
+    /// </summary>
+    private void OnIteration(object? sender, EventArgs<IApplication?> args)
+    {
+        if (_disposed || _modal || _grid.Session is not TerminalSession active || !active.IsDirty)
+        {
+            return;
+        }
+
+        if (_pacer.ShouldPaint(Environment.TickCount64, active.InSynchronizedUpdate))
+        {
+            active.ConsumeDirty();
+            _grid.SetNeedsDraw();
+        }
     }
 
     private void Wire(View view)

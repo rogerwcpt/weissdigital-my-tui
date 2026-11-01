@@ -218,7 +218,21 @@ internal sealed class TerminalSession : IDisposable
         MarkDirty();
     }
 
+    internal bool IsDirty => Volatile.Read(ref _dirty) == 1;
+
     internal bool ConsumeDirty() => Interlocked.Exchange(ref _dirty, 0) == 1;
+
+    /// <summary>The child is between CSI ? 2026 h and CSI ? 2026 l, so the screen is half written.</summary>
+    internal bool InSynchronizedUpdate
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return !_disposed && _vt.ModeGet(TerminalMode.SynchronizedOutput);
+            }
+        }
+    }
 
     internal ScreenFrame Capture()
     {

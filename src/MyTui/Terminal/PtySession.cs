@@ -297,7 +297,9 @@ internal sealed class PtySession : IDisposable
 
     private void ReadLoop()
     {
-        byte[] buffer = new byte[4096];
+        // A full-screen redraw from a TUI is often larger than 4 KiB. One read per redraw
+        // means one VT write and one lock instead of several.
+        byte[] buffer = new byte[64 * 1024];
         while (!_stop)
         {
             int fd;

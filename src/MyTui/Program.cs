@@ -4,6 +4,9 @@ using Terminal.Gui.Input;
 using Terminal.Gui.Views;
 
 Application.SetDefaultKeyBinding(Command.Quit, Bind.All(Key.Q.WithCtrl));
+// The default is 25. A key waits one iteration to reach the PTY and the echo waits for the
+// next, so 40 ms iterations read as typing lag. FramePacer keeps steady output near 60 paints.
+Application.MaximumIterationsPerSecond = 120;
 
 IApplication app = Application.Create();
 SessionScreen? screen = null;
