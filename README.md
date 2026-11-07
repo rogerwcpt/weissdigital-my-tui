@@ -27,11 +27,13 @@ Ctrl+N creates a session. The command defaults to `$SHELL` and can be edited bef
 
 ## Publish
 
-The publish output is a folder. Run `my-tui` from that folder. There is no Homebrew formula.
+A push to `main` publishes the next patch release. The assets are `my-tui-<version>-osx-arm64.tar.gz` and `my-tui-<version>-linux-x64.tar.gz`, plus `SHA256SUMS`. The Mac archive includes `libmytui_pty.dylib`, which has to stay next to `my-tui`. There is no Homebrew formula yet.
+
+A local folder build is the same pair of runtime identifiers:
 
 ```
 dotnet publish src/MyTui -c Release -r osx-arm64 --self-contained
 dotnet publish src/MyTui -c Release -r linux-x64 --self-contained
 ```
 
-On macOS, `libmytui_pty.dylib` has to stay next to `my-tui`. The publish step ad-hoc signs both. If Gatekeeper blocks a copied binary, `xattr -d com.apple.quarantine my-tui` or `codesign --force -s - my-tui`. The Linux build is `linux-x64`, which is the RID the VT library ships. It does not need libicu.
+On macOS the publish step ad-hoc signs `my-tui` and the dylib. If Gatekeeper blocks a copied binary, `xattr -d com.apple.quarantine my-tui`. The Linux build is `linux-x64`, which is the RID the VT library ships. It does not need libicu.

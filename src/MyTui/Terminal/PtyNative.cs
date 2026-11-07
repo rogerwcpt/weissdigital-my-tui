@@ -144,16 +144,9 @@ internal static partial class PtyNative
 
     private static IntPtr LoadMacIoctl()
     {
+        // BaseDirectory is the folder that contains my-tui, including a single-file build.
+        // Assembly.Location is empty in that build, and the compiler rejects it.
         string path = Path.Combine(AppContext.BaseDirectory, "libmytui_pty.dylib");
-        if (!File.Exists(path))
-        {
-            string? directory = Path.GetDirectoryName(typeof(PtyNative).Assembly.Location);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                path = Path.Combine(directory, "libmytui_pty.dylib");
-            }
-        }
-
         if (!File.Exists(path))
         {
             throw new FileNotFoundException(
