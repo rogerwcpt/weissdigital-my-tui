@@ -753,11 +753,12 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
+        string previous = HostTheme.Current;
         HoldModal();
         string? chosen;
         try
         {
-            chosen = ThemeDialog.Ask(_app, HostTheme.Current);
+            chosen = ThemeDialog.Ask(_app, previous, PreviewTheme);
         }
         finally
         {
@@ -766,17 +767,32 @@ internal sealed class SessionScreen : IDisposable
 
         if (chosen is null)
         {
+            if (HostTheme.Current != previous)
+            {
+                HostTheme.Apply(previous);
+                Restyle();
+            }
+
             return;
         }
 
-        string previous = HostTheme.Current;
-        HostTheme.Apply(chosen);
+        if (HostTheme.Current != chosen)
+        {
+            HostTheme.Apply(chosen);
+        }
+
         if (HostTheme.Current == previous)
         {
             return;
         }
 
         HostTheme.Save();
+        Restyle();
+    }
+
+    private void PreviewTheme(string name)
+    {
+        HostTheme.Apply(name);
         Restyle();
     }
 

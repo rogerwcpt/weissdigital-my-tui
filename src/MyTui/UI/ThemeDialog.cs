@@ -8,11 +8,13 @@ using Terminal.Gui.Views;
 namespace MyTui.UI;
 
 /// <summary>
-/// Theme list from the command palette. Enter applies the highlighted name. Esc leaves the theme alone.
+/// Theme list from the command palette. Moving the highlight paints that theme on the dialog
+/// and the screen behind it. Enter, Apply, or a double-click keeps the highlight.
+/// Esc or Cancel restores the theme that was open when the list appeared.
 /// </summary>
 internal static class ThemeDialog
 {
-    internal static string? Ask(IApplication app, string current)
+    internal static string? Ask(IApplication app, string current, Action<string> preview)
     {
         string[] names = ThemeNames.All;
         var dialog = new Dialog
@@ -39,6 +41,23 @@ internal static class ThemeDialog
         dialog.AddButton(new Button { Text = "Cancel", HotKey = Key.Empty });
         var apply = new Button { Text = "Apply", IsDefault = true, HotKey = Key.Empty };
         dialog.AddButton(apply);
+        list.ValueChanged += (_, args) =>
+        {
+            if (args.NewValue is not int index || index < 0 || index >= names.Length)
+            {
+                return;
+            }
+
+            preview(names[index]);
+            Scheme highlighted = HostTheme.Scheme();
+            SessionScreen.ApplyScheme(dialog, highlighted);
+            foreach (Button button in dialog.Buttons)
+            {
+                button.SetScheme(highlighted);
+            }
+
+            dialog.SetNeedsDraw();
+        };
         list.Accept = () =>
         {
             dialog.Result = 1;
@@ -81,7 +100,7 @@ internal static class ThemeDialog
         protected override bool OnMouseEvent(Mouse mouse)
         {
             bool handled = base.OnMouseEvent(mouse);
-            if (mouse.Flags.HasFlag(MouseFlags.LeftButtonClicked))
+            if (mouse.Flags.HasFlag(MouseFlags.LeftButtonDoubleClicked))
             {
                 Accept?.Invoke();
                 return true;
