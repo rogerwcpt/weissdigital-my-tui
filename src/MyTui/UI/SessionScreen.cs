@@ -4,6 +4,7 @@ using MyTui.Persistence;
 using MyTui.Sessions;
 using MyTui.Terminal;
 using Terminal.Gui.App;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -51,6 +52,7 @@ internal sealed class SessionScreen : IDisposable
     private bool _updating;
     private bool _modal;
     private bool _disposed;
+    private Window? _window;
 
     /// <summary>
     /// Mac Delete is Backspace. Forward delete is Delete or DeleteChar. Any of them closes from outside a live terminal.
@@ -282,6 +284,7 @@ internal sealed class SessionScreen : IDisposable
 
     internal void AttachTitle(Window window)
     {
+        _window = window;
         TitleBar.Attach(window, ShowPalette);
         window.ClearingViewport += (_, _) => _grid.Repaint();
         window.KeyDown += (_, key) =>
@@ -708,6 +711,92 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
+    private void ChooseTheme()
+    {
+        if (_modal)
+        {
+            return;
+        }
+
+        HoldModal();
+        string? chosen;
+        try
+        {
+            chosen = ThemeDialog.Ask(_app, HostTheme.Current);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (chosen is null)
+        {
+            return;
+        }
+
+        string previous = HostTheme.Current;
+        HostTheme.Apply(chosen);
+        if (HostTheme.Current == previous)
+        {
+            return;
+        }
+
+        HostTheme.Save();
+        Restyle();
+    }
+
+    private void Restyle()
+    {
+        if (_window is not null)
+        {
+            ApplyScheme(_window, HostTheme.Scheme());
+        }
+
+        ApplyScheme(_markdown, HostTheme.Preview());
+        ApplyScheme(_text, HostTheme.Preview());
+        _window?.SetNeedsDraw();
+        _grid.Repaint();
+    }
+
+    /// <summary>
+    /// Paints <paramref name="scheme"/> onto <paramref name="view"/> and the views already in its tree.
+    /// A border is included only when it already exists. Creating one here never finishes: the new
+    /// border is a view, and its own border creates another, until the stack overflows and the
+    /// terminal is left in mouse-tracking mode.
+    /// </summary>
+    internal static void ApplyScheme(View view, Scheme scheme)
+    {
+        var seen = new HashSet<View>();
+        var pending = new Stack<View>();
+        pending.Push(view);
+        while (pending.Count > 0)
+        {
+            View current = pending.Pop();
+            if (!seen.Add(current))
+            {
+                continue;
+            }
+
+            current.SetScheme(scheme);
+            foreach (View child in current.SubViews.ToArray())
+            {
+                pending.Push(child);
+            }
+
+            Push(current.Margin.View);
+            Push(current.Border.View);
+            Push(current.Padding.View);
+        }
+
+        void Push(View? existing)
+        {
+            if (existing is not null)
+            {
+                pending.Push(existing);
+            }
+        }
+    }
+
     private void ShowAbout()
     {
         if (_modal)
@@ -791,6 +880,9 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case "paste":
                 PasteClipboard();
+                break;
+            case "theme":
+                ChooseTheme();
                 break;
             case "about":
                 ShowAbout();

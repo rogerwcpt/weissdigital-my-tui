@@ -69,10 +69,13 @@
           </ul>
         </section>
 
-        <section class="chapter" aria-labelledby="run">
-          <h2 id="run">Run</h2>
-          <pre><code>dotnet run --project src/MyTui</code></pre>
-          <p>From the source tree. A published build is a folder: run <code>my-tui</code> from that folder. On macOS, <code>libmytui_pty.dylib</code> has to stay next to <code>my-tui</code>. There is no Homebrew formula.</p>
+        <section class="chapter" aria-labelledby="install">
+          <h2 id="install">Install</h2>
+          <p class="deck">Apple silicon.</p>
+          <pre><code>brew trust rogerwcpt/my-tui
+brew install rogerwcpt/my-tui/my-tui</code></pre>
+          <p>Homebrew keeps <code>libmytui_pty.dylib</code> beside the real binary and puts <code>my-tui</code> on your PATH. Trust is once per machine.</p>
+          <p>The other route is the <a href="https://github.com/rogerwcpt/weissdigital-my-tui/releases/latest">latest release</a>. Unpack <code>my-tui-*-osx-arm64.tar.gz</code> and leave the dylib next to <code>my-tui</code>. A browser download is quarantined: <code>xattr -d com.apple.quarantine my-tui</code>.</p>
         </section>
       </div>
     </main>

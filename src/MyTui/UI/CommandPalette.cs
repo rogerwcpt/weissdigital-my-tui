@@ -37,6 +37,7 @@ internal static class CommandPalette
         new("Close the session", "Delete", "close"),
         new("Copy visible text", "Ctrl+Shift+C", "copy"),
         new("Paste", "Ctrl+Shift+V", "paste"),
+        new("Theme", "", "theme"),
         new("About", "", "about"),
         new("Quit", "Ctrl+Q", "quit"),
     ];
@@ -72,9 +73,10 @@ internal static class CommandPalette
             CanFocus = true,
         };
         list.SetSource(shown);
-        dialog.SetScheme(HostTheme.Plain());
-        query.SetScheme(HostTheme.Plain());
-        list.SetScheme(HostTheme.Plain());
+        Scheme scheme = HostTheme.Scheme();
+        dialog.SetScheme(scheme);
+        query.SetScheme(scheme);
+        list.SetScheme(scheme);
 
         void Refilter()
         {

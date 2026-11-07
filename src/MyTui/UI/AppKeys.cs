@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using MyTui.Persistence;
 using Terminal.Gui.Input;
 
 namespace MyTui.UI;
@@ -124,7 +123,7 @@ internal static class AppKeys
     /// <summary>Reads <c>leader</c> from <c>~/.config/my-tui/config.json</c> when it is present and valid.</summary>
     internal static void Load()
     {
-        string path = Path.Combine(Path.GetDirectoryName(StateStore.DefaultPath()) ?? "", "config.json");
+        string path = HostTheme.ConfigPath();
         if (!File.Exists(path))
         {
             return;

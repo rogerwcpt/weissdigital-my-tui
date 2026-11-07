@@ -17,6 +17,21 @@ The plan is in [docs/PLAN.md](docs/PLAN.md). The build order is in [docs/ROADMAP
 - No commercial upsell surface
 - No attempt to replace Ghostty itself as a daily terminal
 
+## Install
+
+### macOS
+
+Apple silicon:
+
+```
+brew trust rogerwcpt/my-tui
+brew install rogerwcpt/my-tui/my-tui
+```
+
+Homebrew asks for trust once. The formula keeps `libmytui_pty.dylib` next to the real binary and symlinks `my-tui` onto your PATH.
+
+The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar.gz` from the [latest release](https://github.com/rogerwcpt/weissdigital-my-tui/releases/latest), unpack it, and leave `libmytui_pty.dylib` next to `my-tui`. A browser download is quarantined by Gatekeeper. Clear it with `xattr -d com.apple.quarantine my-tui`.
+
 ## Run
 
 ```
@@ -27,7 +42,7 @@ Ctrl+N creates a session. The command defaults to `$SHELL` and can be edited bef
 
 ## Publish
 
-A push to `main` publishes the next patch release. The assets are `my-tui-<version>-osx-arm64.tar.gz` and `my-tui-<version>-linux-x64.tar.gz`, plus `SHA256SUMS`. The Mac archive includes `libmytui_pty.dylib`, which has to stay next to `my-tui`. There is no Homebrew formula yet.
+A push to `main` publishes the next patch release. The assets are `my-tui-<version>-osx-arm64.tar.gz` and `my-tui-<version>-linux-x64.tar.gz`, plus `SHA256SUMS`. The Mac archive includes `libmytui_pty.dylib`, which has to stay next to `my-tui`.
 
 A local folder build is the same pair of runtime identifiers:
 

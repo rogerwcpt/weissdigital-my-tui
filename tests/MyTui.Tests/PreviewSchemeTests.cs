@@ -9,6 +9,7 @@ public class PreviewSchemeTests
     [Fact]
     public void ReadOnlyAndCodeStayOnTheTerminalDefault()
     {
+        HostTheme.Apply(ThemeNames.Terminal);
         Scheme scheme = HostTheme.Preview();
         var detected = new TuiAttribute(new Color(232, 232, 232), new Color(28, 28, 28));
 

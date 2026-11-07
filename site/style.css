@@ -281,6 +281,16 @@ h1 {
   text-wrap: pretty;
 }
 
+.spread a {
+  color: var(--amber);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+.spread a:hover {
+  color: var(--ink);
+}
+
 .colophon {
   margin-top: 3.25rem;
   padding-top: 1rem;
@@ -409,7 +419,9 @@ h1 {
 
   .brand,
   .colophon a,
-  .colophon a:hover {
+  .colophon a:hover,
+  .spread a,
+  .spread a:hover {
     color: #161616;
   }
 

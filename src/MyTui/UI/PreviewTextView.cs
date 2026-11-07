@@ -120,7 +120,7 @@ internal sealed class PreviewTextView : View
 
         int top = Math.Max(0, Viewport.Y);
         int left = Math.Max(0, Viewport.X);
-        SetAttribute(new TuiAttribute(Color.None, Color.None));
+        SetAttribute(GetAttributeForRole(VisualRole.Normal));
         for (int row = 0; row < height; row++)
         {
             int index = top + row;
@@ -317,8 +317,8 @@ internal sealed class PreviewTextView : View
                 : (int)Math.Round(_owner.Viewport.X / (double)max * travel);
             position = Math.Clamp(position, 0, Math.Max(0, width - thumb));
 
-            var track = new TuiAttribute(Color.None, Color.None, TextStyle.Faint);
-            var thumbAttribute = new TuiAttribute(Color.None, Color.None);
+            TuiAttribute track = GetAttributeForRole(VisualRole.Disabled);
+            TuiAttribute thumbAttribute = GetAttributeForRole(VisualRole.Normal);
             var glyph = new Rune(HalfBlock);
             for (int column = 0; column < width; column++)
             {

@@ -13,7 +13,7 @@ SessionScreen? screen = null;
 try
 {
     app.Init();
-    HostTheme.Apply();
+    HostTheme.Load();
     var window = new Window();
     screen = new SessionScreen(app);
     screen.AttachTitle(window);
