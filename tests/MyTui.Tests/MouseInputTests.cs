@@ -26,6 +26,36 @@ public class MouseInputTests
     }
 
     [Fact]
+    public void SgrPressReleaseAndDragUseTheButton()
+    {
+        Assert.Equal("\u001b[<0;1;5M"u8.ToArray(), MouseInput.Pointer(0, 4, 0, false, false, 0, true, false, false));
+        Assert.Equal("\u001b[<0;1;5m"u8.ToArray(), MouseInput.Pointer(0, 4, 0, true, false, 0, true, false, false));
+        Assert.Equal("\u001b[<32;3;4M"u8.ToArray(), MouseInput.Pointer(2, 3, 0, false, true, 0, true, false, false));
+        Assert.Equal("\u001b[<35;1;1M"u8.ToArray(), MouseInput.Pointer(0, 0, 3, false, true, 0, true, false, false));
+        Assert.Equal("\u001b[<16;1;1M"u8.ToArray(), MouseInput.Pointer(0, 0, 0, false, false, 16, true, false, false));
+    }
+
+    [Fact]
+    public void X10ReleaseIsButtonThreeAndStopsPastColumn223()
+    {
+        Assert.Equal(
+            new byte[] { 0x1b, (byte)'[', (byte)'M', 32, 33, 34 },
+            MouseInput.Pointer(0, 1, 0, false, false, 0, false, false, false));
+        Assert.Equal(
+            new byte[] { 0x1b, (byte)'[', (byte)'M', 35, 33, 34 },
+            MouseInput.Pointer(0, 1, 0, true, false, 0, false, false, false));
+        Assert.Null(MouseInput.Pointer(223, 0, 0, false, false, 0, false, false, false));
+    }
+
+    [Fact]
+    public void UrxvtAndUtf8UseTheirOwnShapes()
+    {
+        Assert.Equal("\u001b[32;33;33M"u8.ToArray(), MouseInput.Pointer(0, 0, 0, false, false, 0, false, true, false));
+        byte[] utf8 = MouseInput.Pointer(200, 0, 0, false, false, 0, false, false, true)!;
+        Assert.Equal(new byte[] { 0x1b, (byte)'[', (byte)'M', 32, 0xc3, 0xa9, 33 }, utf8);
+    }
+
+    [Fact]
     public void ArrowsFollowCursorKeyMode()
     {
         Assert.Equal(new byte[] { 0x1b, (byte)'[', (byte)'A', 0x1b, (byte)'[', (byte)'A', 0x1b, (byte)'[', (byte)'A' },

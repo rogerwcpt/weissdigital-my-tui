@@ -120,6 +120,18 @@ internal sealed class SessionManager
         Save();
     }
 
+    internal void Rename(Session session, string name)
+    {
+        string trimmed = name.Trim();
+        if (trimmed.Length == 0 || trimmed == session.Name)
+        {
+            return;
+        }
+
+        session.Name = trimmed;
+        Save();
+    }
+
     internal void SetTab(Session session, SessionTab tab)
     {
         if (session.Tab == tab)

@@ -6,6 +6,7 @@ using Terminal.Gui.Views;
 
 namespace MyTui.Tests;
 
+[Collection("HostTheme")]
 public class ThemeTests
 {
     [Fact]

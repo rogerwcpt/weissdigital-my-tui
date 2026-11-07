@@ -16,6 +16,7 @@ internal enum AppCommand
     CycleTab,
     Preview,
     Edit,
+    Rename,
     Refresh,
     Templates,
     Close,
@@ -105,10 +106,11 @@ internal static class AppKeys
         new(AppCommand.CycleTab, "Terminal or Files", "t", 't', false, false, Key.T.WithCtrl, "Ctrl+T", false),
         new(AppCommand.Preview, "open or close the preview", "p", 'p', false, false, Key.P.WithCtrl, "Ctrl+P", false),
         new(AppCommand.Edit, "edit the session", "e", 'e', false, false, Key.E.WithCtrl, "Ctrl+E", false),
+        new(AppCommand.Rename, "rename the session", "R", 'R', false, false, Key.F6, "F6", false),
         new(AppCommand.Refresh, "refresh Files", "r", 'r', false, false, Key.R.WithCtrl, "Ctrl+R", false),
         new(AppCommand.Templates, "templates", "T", 'T', false, false, Key.F2, "F2", false),
         new(AppCommand.Close, "close the session", "x", 'x', false, false, Key.Delete, "Delete", false),
-        new(AppCommand.Copy, "copy visible text", "c", 'c', false, false, Key.C.WithCtrl.WithShift, "Ctrl+Shift+C", true),
+        new(AppCommand.Copy, "copy selection or screen", "c", 'c', false, false, Key.C.WithCtrl.WithShift, "Ctrl+Shift+C", true),
         new(AppCommand.Paste, "paste", "v", 'v', false, false, Key.V.WithCtrl.WithShift, "Ctrl+Shift+V", true),
         new(AppCommand.Help, "keystrokes", "?", '?', false, false, null, "", false),
         new(AppCommand.Quit, "quit", "q", 'q', false, false, Key.Q.WithCtrl, "Ctrl+Q", false),
@@ -260,6 +262,12 @@ internal static class AppKeys
             lines.Add($"{LeaderText} {binding.AfterLeaderText,-10} {binding.Label}{direct}");
         }
 
+        lines.Add("Drag           select text. Releasing copies it");
+        lines.Add("Shift+drag     select while a program tracks the mouse");
+        lines.Add("Click          a program that tracks the mouse, including its links");
+        lines.Add("Double-click   a stopped session in the list starts it");
+        lines.Add("Double-click   a word in the terminal. Triple-click selects the line");
+        lines.Add("Ctrl+click     open a URL under the pointer");
         lines.Add("Shift+PgUp     scroll up, also in a terminal");
         lines.Add("Shift+PgDn     scroll down, also in a terminal");
         lines.Add("Shift+Home     top of the history");

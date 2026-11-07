@@ -53,6 +53,29 @@ public class SessionStateTests
     }
 
     [Fact]
+    public void Rename_PersistsTheNameAndLeavesTheCommand()
+    {
+        string directory = Directory.CreateTempSubdirectory("my-tui-rename").FullName;
+        string path = Path.Combine(directory, "state.json");
+        try
+        {
+            var manager = SessionManager.Load(path);
+            Session session = manager.Create("shell", directory, "/bin/zsh", ["-l"]);
+            manager.Rename(session, "  notes  ");
+            Assert.Equal("notes", session.Name);
+            var again = SessionManager.Load(path);
+            Assert.Equal("notes", again.Focused!.Name);
+            Assert.Equal("/bin/zsh", again.Focused.Command);
+            Assert.Equal(["-l"], again.Focused.Args);
+            Assert.Equal(directory, again.Focused.Cwd);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void CorruptFile_IsParkedAndLoadStartsEmpty()
     {
         string directory = Directory.CreateTempSubdirectory("my-tui-bad").FullName;

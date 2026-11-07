@@ -37,6 +37,7 @@ internal sealed class SessionScreen : IDisposable
     private readonly Label _hint;
     private readonly Label _commands;
     private readonly FramePacer _pacer = new();
+    private long _fastUntil;
     private readonly LeaderState _leader = new();
     private readonly HashSet<Session> _unseen = [];
     private readonly HashSet<Session> _rang = [];
@@ -53,6 +54,8 @@ internal sealed class SessionScreen : IDisposable
     private bool _modal;
     private bool _disposed;
     private Window? _window;
+    private string _statusNote = "";
+    private long _statusUntil;
 
     /// <summary>
     /// Mac Delete is Backspace. Forward delete is Delete or DeleteChar. Any of them closes from outside a live terminal.
@@ -119,7 +122,7 @@ internal sealed class SessionScreen : IDisposable
     internal SessionScreen(IApplication app)
     {
         _app = app;
-        _grid = new CellGridView(HandleChord, StartFocused, CloseSelected);
+        _grid = new CellGridView(HandleChord, StartFocused, CloseSelected, CopyText, OpenLink);
         _hint = new Label
         {
             X = 0,
@@ -383,6 +386,9 @@ internal sealed class SessionScreen : IDisposable
             case AppCommand.Edit:
                 EditSession();
                 break;
+            case AppCommand.Rename:
+                RenameSession();
+                break;
             case AppCommand.Refresh:
                 RefreshFiles();
                 break;
@@ -586,6 +592,35 @@ internal sealed class SessionScreen : IDisposable
         session.StartError = null;
         Content.Title = session.Name;
         RefreshFiles();
+        SyncLabel(_manager.FocusedIndex);
+        UpdateStatus();
+    }
+
+    internal void RenameSession()
+    {
+        if (_modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        HoldModal();
+        string? name;
+        try
+        {
+            name = SessionDialog.AskName(_app, session.Name);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (string.IsNullOrEmpty(name))
+        {
+            return;
+        }
+
+        _manager.Rename(session, name);
+        Content.Title = session.Name;
         SyncLabel(_manager.FocusedIndex);
         UpdateStatus();
     }
@@ -839,6 +874,9 @@ internal sealed class SessionScreen : IDisposable
             case "new":
                 NewSession();
                 break;
+            case "start":
+                OpenFocused();
+                break;
             case "open":
                 OpenFolder();
                 break;
@@ -865,6 +903,9 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case "edit":
                 EditSession();
+                break;
+            case "rename":
+                RenameSession();
                 break;
             case "refresh":
                 RefreshFiles();
@@ -970,13 +1011,42 @@ internal sealed class SessionScreen : IDisposable
 
     private void CopyVisible()
     {
-        string? text = _grid.Session?.Capture().PlainText;
+        string? text = _grid.SelectionText();
         if (string.IsNullOrEmpty(text))
+        {
+            text = _grid.Session?.Capture().PlainText;
+        }
+
+        CopyText(text ?? "");
+    }
+
+    private void CopyText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
         {
             return;
         }
 
         _app.Clipboard?.TrySetClipboardData(text);
+        Note("Copied");
+    }
+
+    private void OpenLink(string url)
+    {
+        if (LinkOpen.TryOpen(url))
+        {
+            Note("Opened link");
+            return;
+        }
+
+        Note("Could not open the link");
+    }
+
+    private void Note(string text)
+    {
+        _statusNote = text;
+        _statusUntil = Environment.TickCount64 + 2500;
+        _commands.Text = text;
     }
 
     private void PasteClipboard()
@@ -1003,6 +1073,41 @@ internal sealed class SessionScreen : IDisposable
         {
             ReleaseModal();
         }
+    }
+
+    /// <summary>
+    /// Enter, a double-click in the session list, or the palette. A stopped session starts.
+    /// A running one only takes focus, on whichever tab it is already showing.
+    /// </summary>
+    private void OpenFocused()
+    {
+        if (_modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        if (!session.IsRunning)
+        {
+            // The new process is sized from the terminal pane. Reveal it before starting.
+            if (_contentHidden || _maximized is MaximizedPanel.Sessions or MaximizedPanel.Preview || session.Tab != SessionTab.Terminal)
+            {
+                _contentHidden = false;
+                if (_maximized is MaximizedPanel.Sessions or MaximizedPanel.Preview)
+                {
+                    _maximized = MaximizedPanel.None;
+                }
+
+                _manager.SetTab(session, SessionTab.Terminal);
+                _hint.Visible = false;
+                _grid.Visible = true;
+                SelectTab(SessionTab.Terminal);
+                ApplyLayout();
+            }
+
+            StartFocused();
+        }
+
+        FocusPane();
     }
 
     private void StartFocused()
@@ -1658,6 +1763,15 @@ internal sealed class SessionScreen : IDisposable
             return true;
         }
 
+        if (_statusUntil != 0 && Environment.TickCount64 >= _statusUntil)
+        {
+            _statusUntil = 0;
+            if (_commands.Text == _statusNote)
+            {
+                _commands.Text = CommandPalette.Footer;
+            }
+        }
+
         for (int i = 0; i < _manager.Sessions.Count && i < _labels.Count; i++)
         {
             SyncLabel(i);
@@ -1750,17 +1864,40 @@ internal sealed class SessionScreen : IDisposable
     }
 
     /// <summary>
-    /// Runs at the top of every main-loop iteration, before Terminal.Gui lays out and draws,
-    /// so PTY output that arrived since the last frame is painted in this one.
+    /// Runs before Terminal.Gui reads <see cref="Application.MaximumIterationsPerSecond"/> and
+    /// before it draws. The cap chosen here is the sleep after this iteration. A queued key or
+    /// fresh output on the visible terminal selects the fast cap, so the echo is not left behind
+    /// an idle sleep. A hidden or covered terminal does not keep the loop awake.
     /// </summary>
     private void OnIteration(object? sender, EventArgs<IApplication?> args)
     {
-        if (_disposed || _modal || _grid.Session is not TerminalSession active || !active.IsDirty)
+        if (_disposed)
         {
             return;
         }
 
-        if (_pacer.ShouldPaint(Environment.TickCount64, active.InSynchronizedUpdate))
+        long now = Environment.TickCount64;
+        bool showOutput = !_modal
+            && !_contentHidden
+            && _grid.Visible
+            && _grid.Live
+            && _maximized != MaximizedPanel.Sessions
+            && _maximized != MaximizedPanel.Preview;
+        TerminalSession? active = showOutput ? _grid.Session : null;
+        bool busy = active?.IsDirty == true || PendingInput.Any(_app);
+        WakeDecision pace = WakePace.Choose(now, busy, _fastUntil);
+        _fastUntil = pace.FastUntil;
+        if (Application.MaximumIterationsPerSecond != pace.PerSecond)
+        {
+            Application.MaximumIterationsPerSecond = pace.PerSecond;
+        }
+
+        if (active is null || !active.IsDirty)
+        {
+            return;
+        }
+
+        if (_pacer.ShouldPaint(now, active.InSynchronizedUpdate))
         {
             active.ConsumeDirty();
             _grid.SetNeedsDraw();
@@ -1808,7 +1945,7 @@ internal sealed class SessionScreen : IDisposable
 
             if (key == Key.Enter)
             {
-                _screen.FocusPane();
+                _screen.OpenFocused();
                 key.Handled = true;
                 return true;
             }
@@ -1845,7 +1982,20 @@ internal sealed class SessionScreen : IDisposable
                 }
             }
 
-            return base.OnMouseEvent(mouse);
+            bool handled = base.OnMouseEvent(mouse);
+            if (mouse.Flags.HasFlag(MouseFlags.LeftButtonDoubleClicked)
+                && mouse.Position is { } click
+                && (Viewport.Width <= 1 || (int)click.X < Viewport.Width - 1))
+            {
+                int row = Viewport.Y + (int)click.Y;
+                if (SelectedItem == row)
+                {
+                    _screen.OpenFocused();
+                    return true;
+                }
+            }
+
+            return handled;
         }
     }
 

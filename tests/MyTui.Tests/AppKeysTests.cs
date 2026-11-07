@@ -77,6 +77,18 @@ public class AppKeysTests
     }
 
     [Fact]
+    public void RenameIsShiftRAfterTheLeaderAndF6OutsideATerminal()
+    {
+        var leader = new LeaderState();
+        AppKeys.Route(AppKeys.Leader, true, leader, 0, out _);
+        Assert.Equal(KeyRoute.Run, AppKeys.Route(Key.R.WithShift, true, leader, 10, out AppCommand command));
+        Assert.Equal(AppCommand.Rename, command);
+        Assert.Equal(KeyRoute.Forward, AppKeys.Route(Key.F6, true, new LeaderState(), 0, out _));
+        Assert.Equal(KeyRoute.Run, AppKeys.Route(Key.F6, false, new LeaderState(), 0, out command));
+        Assert.Equal(AppCommand.Rename, command);
+    }
+
+    [Fact]
     public void CopyAndPasteWorkInsideTheTerminal()
     {
         var leader = new LeaderState();

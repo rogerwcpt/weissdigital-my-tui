@@ -231,11 +231,7 @@ internal sealed class TerminalSession : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            bool tracking = _vt.ModeGet(TerminalMode.MouseNormal)
-                || _vt.ModeGet(TerminalMode.MouseButton)
-                || _vt.ModeGet(TerminalMode.MouseAny)
-                || _vt.ModeGet(TerminalMode.MouseX10);
-            if (tracking)
+            if (TracksMouseCore())
             {
                 scroll = false;
                 return MouseInput.Wheel(up, column, row, _vt.ModeGet(TerminalMode.MouseSGR));
@@ -252,6 +248,114 @@ internal sealed class TerminalSession : IDisposable
 
             scroll = true;
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Press, release, or motion for a program that tracks the mouse. Null when this event is
+    /// outside the mode it enabled, or the session is gone.
+    /// </summary>
+    internal byte[]? EncodePointer(int column, int row, PointerKind kind, int button, bool ctrl, bool alt)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!TracksMouseCore() || !PointerWanted(kind, button))
+            {
+                return null;
+            }
+
+            int modifiers = (alt ? 8 : 0) + (ctrl ? 16 : 0);
+            bool sgr = _vt.ModeGet(TerminalMode.MouseSGR) || _vt.ModeGet(TerminalMode.SgrPixelsMouse);
+            bool urxvt = !sgr && _vt.ModeGet(TerminalMode.UrxvtMouse);
+            bool utf8 = !sgr && !urxvt && _vt.ModeGet(TerminalMode.Utf8Mouse);
+            return MouseInput.Pointer(
+                column,
+                row,
+                button,
+                release: kind == PointerKind.Release,
+                motion: kind == PointerKind.Motion,
+                modifiers,
+                sgr,
+                urxvt,
+                utf8);
+        }
+    }
+
+    /// <summary>The program asked for mouse clicks. An unmodified click is encoded to it.</summary>
+    internal bool TracksMouse
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return !_disposed && TracksMouseCore();
+            }
+        }
+    }
+
+    internal string CopyRange(int column1, int row1, int column2, int row2)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return "";
+            }
+
+            ReadViewport(out string[][] rows, out bool[] wrapped);
+            return GridText.Copy(rows, wrapped, column1, row1, column2, row2);
+        }
+    }
+
+    internal bool TryWord(int column, int row, out CellRange range)
+    {
+        lock (_gate)
+        {
+            range = default;
+            if (_disposed)
+            {
+                return false;
+            }
+
+            ReadViewport(out string[][] rows, out bool[] wrapped);
+            return GridText.TryWord(rows, wrapped, column, row, out range);
+        }
+    }
+
+    internal bool TryLine(int row, out CellRange range)
+    {
+        lock (_gate)
+        {
+            range = default;
+            if (_disposed)
+            {
+                return false;
+            }
+
+            ReadViewport(out string[][] rows, out bool[] wrapped);
+            return GridText.TryLine(rows, wrapped, row, out range);
+        }
+    }
+
+    /// <summary>OSC 8 target when the cell has one, otherwise a URL written in the text.</summary>
+    internal string? UrlAt(int column, int row)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return null;
+            }
+
+            string? osc = HyperlinkLookup.Read(_vt, column, row);
+            if (osc is not null)
+            {
+                return osc.Length == 0 ? null : osc;
+            }
+
+            ReadViewport(out string[][] rows, out bool[] wrapped);
+            return GridText.UrlAt(rows, wrapped, column, row);
         }
     }
 
@@ -366,6 +470,92 @@ internal sealed class TerminalSession : IDisposable
 
     private void MarkDirty() => Interlocked.Exchange(ref _dirty, 1);
 
+    private bool TracksMouseCore() =>
+        _vt.ModeGet(TerminalMode.MouseNormal)
+        || _vt.ModeGet(TerminalMode.MouseButton)
+        || _vt.ModeGet(TerminalMode.MouseAny)
+        || _vt.ModeGet(TerminalMode.MouseX10);
+
+    private bool PointerWanted(PointerKind kind, int button)
+    {
+        bool any = _vt.ModeGet(TerminalMode.MouseAny);
+        bool buttons = _vt.ModeGet(TerminalMode.MouseButton);
+        bool normal = _vt.ModeGet(TerminalMode.MouseNormal);
+        bool x10 = _vt.ModeGet(TerminalMode.MouseX10);
+        if (kind == PointerKind.Motion)
+        {
+            if (any)
+            {
+                return true;
+            }
+
+            return buttons && button <= 2;
+        }
+
+        if (kind == PointerKind.Release)
+        {
+            return normal || buttons || any;
+        }
+
+        return x10 || normal || buttons || any;
+    }
+
+    private void ReadViewport(out string[][] graphemes, out bool[] wrapped)
+    {
+        _render.Update(_vt);
+        graphemes = new string[Rows][];
+        wrapped = new bool[Rows];
+        int rowIndex = 0;
+        foreach (RenderStateRow row in _render.Rows)
+        {
+            if (rowIndex >= Rows)
+            {
+                break;
+            }
+
+            var line = new string[Columns];
+            int column = 0;
+            foreach (Cell cell in row.Cells)
+            {
+                if (column >= Columns)
+                {
+                    break;
+                }
+
+                bool tail = cell.Wide == CellWide.SpacerTail;
+                if (tail)
+                {
+                    line[column] = "";
+                }
+                else if (cell.Style.Invisible || string.IsNullOrEmpty(cell.Grapheme))
+                {
+                    line[column] = " ";
+                }
+                else
+                {
+                    line[column] = cell.Grapheme;
+                }
+                column++;
+            }
+
+            while (column < Columns)
+            {
+                line[column++] = " ";
+            }
+
+            graphemes[rowIndex] = line;
+            wrapped[rowIndex] = row.Wrap;
+            rowIndex++;
+        }
+
+        while (rowIndex < Rows)
+        {
+            graphemes[rowIndex] = new string[Columns];
+            Array.Fill(graphemes[rowIndex], " ");
+            rowIndex++;
+        }
+    }
+
     private ScreenFrame Copy(RenderState state, bool plainText, PaintedCell[]? buffer)
     {
         RenderStateColors colors = state.Colors;
@@ -465,7 +655,7 @@ internal sealed class TerminalSession : IDisposable
             style.Bold,
             style.Italic,
             style.Faint,
-            style.Underline != 0,
+            style.Underline != 0 || cell.HasHyperlink,
             tail);
     }
 

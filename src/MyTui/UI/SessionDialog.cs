@@ -101,6 +101,54 @@ internal static class SessionDialog
         }
     }
 
+    internal static string? AskName(IApplication app, string initial)
+    {
+        var dialog = new Dialog
+        {
+            Title = "Rename session",
+            Width = 52,
+            Height = 7,
+        };
+        var name = Field(0, "Name", initial);
+        var error = new Label
+        {
+            X = 0,
+            Y = 2,
+            Width = Dim.Fill(),
+            Height = 1,
+            CanFocus = false,
+            Text = "",
+        };
+        dialog.Add(name.Label, name.Input, error);
+        dialog.Accepting += (_, args) =>
+        {
+            if (Read(name.Input).Length > 0)
+            {
+                return;
+            }
+
+            error.Text = "Name is empty.";
+            args.Handled = true;
+        };
+        dialog.AddButton(new Button { Text = "Cancel" });
+        dialog.AddButton(new Button { Text = "Rename" });
+        CloseDialog.CancelOnEsc(dialog, app);
+        dialog.Initialized += (_, _) =>
+        {
+            name.Input.SetFocus();
+            name.Input.SelectAll();
+        };
+        try
+        {
+            app.Run(dialog);
+            return dialog.Result == 1 ? Read(name.Input) : null;
+        }
+        finally
+        {
+            dialog.Dispose();
+        }
+    }
+
     private static string Read(TextField field) => field.Text?.ToString()?.Trim() ?? "";
 
     private static (Label Label, TextField Input) Field(int y, string caption, string value)

@@ -42,6 +42,49 @@ public class TerminalSessionTests
     }
 
     [UnixFact(Timeout = 15000)]
+    public async Task UrlAt_ReadsOsc8PlainTextAndAWrappedUrl()
+    {
+        TerminalSession? session = null;
+        try
+        {
+            session = TerminalSession.Start(
+                "/bin/sh",
+                ["/bin/sh", "-c", "printf '\\033]8;;https://example.com/osc\\033\\\\docs\\033]8;;\\033\\\\ see https://example.com/plain.\\n'"],
+                80,
+                12,
+                environment: CleanEnv());
+            ScreenFrame frame = WaitFor(session, value => value.Contains("docs") && value.Contains("plain"));
+            Assert.Equal("https://example.com/osc", session.UrlAt(0, 0));
+            Assert.Equal("https://example.com/plain", session.UrlAt(9, 0));
+            Assert.Null(session.UrlAt(5, 0));
+            Assert.Equal("docs", session.CopyRange(0, 0, 3, 0));
+            Assert.True(Cell(frame, "d").Underline);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        try
+        {
+            session = TerminalSession.Start(
+                "/bin/sh",
+                ["/bin/sh", "-c", "printf 'https://example.com/wrap\\n'"],
+                10,
+                8,
+                environment: CleanEnv());
+            WaitFor(session, value => value.Contains("wrap"));
+            Assert.Equal("https://example.com/wrap", session.UrlAt(0, 2));
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [UnixFact(Timeout = 15000)]
     public async Task Sessions_DoNotShareOutput_AndCloseIsLocal()
     {
         TerminalSession? first = null;
@@ -305,6 +348,41 @@ public class TerminalSessionTests
             }
 
             Assert.Equal(expected, body);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [UnixFact(Timeout = 15000)]
+    public async Task Pointer_UsesSgrAndSkipsMotionTheProgramDidNotAskFor()
+    {
+        TerminalSession? session = null;
+        try
+        {
+            session = TerminalSession.Start(
+                "/bin/sh",
+                ["/bin/sh", "-c", "printf '\\033[?1000h\\033[?1006h\\n'; sleep 2"],
+                80,
+                24,
+                environment: CleanEnv());
+            long deadline = Environment.TickCount64 + 3000;
+            while (Environment.TickCount64 < deadline && !session.TracksMouse)
+            {
+                Thread.Sleep(20);
+            }
+
+            Assert.True(session.TracksMouse);
+            Assert.Equal(
+                "\u001b[<0;1;5M"u8.ToArray(),
+                session.EncodePointer(0, 4, PointerKind.Press, 0, ctrl: false, alt: false));
+            Assert.Null(session.EncodePointer(1, 4, PointerKind.Motion, 0, ctrl: false, alt: false));
+            Assert.Equal(
+                "\u001b[<0;2;5m"u8.ToArray(),
+                session.EncodePointer(1, 4, PointerKind.Release, 0, ctrl: false, alt: false));
         }
         finally
         {

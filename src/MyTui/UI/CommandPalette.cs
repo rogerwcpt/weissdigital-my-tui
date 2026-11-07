@@ -23,6 +23,7 @@ internal static class CommandPalette
     private static readonly Entry[] Entries =
     [
         new("New session", "Ctrl+N", "new"),
+        new("Start the session", "Enter", "start"),
         new("Open folder", "", "open"),
         new("List, tab, or preview", "Ctrl+O", "focus"),
         new("Next panel", "Ctrl+Tab", "next"),
@@ -32,10 +33,11 @@ internal static class CommandPalette
         new("Terminal or Files", "Ctrl+T", "tab"),
         new("Open or close the preview", "Ctrl+P", "preview"),
         new("Edit the session", "Ctrl+E", "edit"),
+        new("Rename the session", "F6", "rename"),
         new("Refresh Files", "Ctrl+R", "refresh"),
         new("Templates", "F2", "templates"),
         new("Close the session", "Delete", "close"),
-        new("Copy visible text", "Ctrl+Shift+C", "copy"),
+        new("Copy selection or screen", "Ctrl+Shift+C", "copy"),
         new("Paste", "Ctrl+Shift+V", "paste"),
         new("Theme", "", "theme"),
         new("About", "", "about"),

@@ -4,6 +4,7 @@ using TuiAttribute = Terminal.Gui.Drawing.Attribute;
 
 namespace MyTui.Tests;
 
+[Collection("HostTheme")]
 public class PreviewSchemeTests
 {
     [Fact]
