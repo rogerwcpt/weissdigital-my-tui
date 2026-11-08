@@ -14,6 +14,17 @@ public class CommandPaletteTests
         Assert.DoesNotContain(CommandPalette.Matches(query, filesActive: false), entry => entry.Id == "open-file");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DuplicateSessionIsAvailableInEitherTab(bool filesActive)
+    {
+        Assert.Contains(CommandPalette.Matches("", filesActive), entry => entry.Id == "duplicate");
+        CommandPalette.Entry entry = Assert.Single(CommandPalette.Matches("DUPLICATE", filesActive));
+        Assert.Equal("duplicate", entry.Id);
+        Assert.Equal("Duplicate session", entry.Title);
+    }
+
     [Fact]
     public void FilteringStillMatchesTitlesAndShortcuts()
     {

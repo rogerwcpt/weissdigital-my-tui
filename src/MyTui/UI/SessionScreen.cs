@@ -445,6 +445,19 @@ internal sealed class SessionScreen : IDisposable
 
     internal void NewSession() => BeginNew(null);
 
+    internal void DuplicateSession()
+    {
+        if (_modal || _manager?.Focused is not Session source)
+        {
+            return;
+        }
+
+        _manager.Duplicate(source);
+        RefreshLabels();
+        ShowSession(_manager.FocusedIndex);
+        OpenFocused();
+    }
+
     internal void OpenFolder()
     {
         if (_manager is null || _modal)
@@ -889,6 +902,9 @@ internal sealed class SessionScreen : IDisposable
         {
             case "new":
                 NewSession();
+                break;
+            case "duplicate":
+                DuplicateSession();
                 break;
             case "start":
                 OpenFocused();

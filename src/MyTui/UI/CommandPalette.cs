@@ -23,6 +23,7 @@ internal static class CommandPalette
     private static readonly Entry[] Entries =
     [
         new("New session", "Ctrl+N", "new"),
+        new("Duplicate session", "", "duplicate"),
         new("Start the session", "Enter", "start"),
         new("Open folder", "", "open"),
         new("Open selected file", "", "open-file"),

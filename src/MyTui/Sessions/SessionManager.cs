@@ -53,6 +53,19 @@ internal sealed class SessionManager
         return session;
     }
 
+    internal Session Duplicate(Session source)
+    {
+        var taken = _sessions.Select(session => session.Name).ToHashSet(StringComparer.Ordinal);
+        for (int count = 2; ; count++)
+        {
+            string name = $"{source.Name}-{count}";
+            if (!taken.Contains(name))
+            {
+                return Create(name, source.Cwd, source.Command, source.Args, source.Env);
+            }
+        }
+    }
+
     internal void Close(Session session)
     {
         int index = _sessions.IndexOf(session);
