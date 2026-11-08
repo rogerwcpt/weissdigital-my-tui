@@ -30,6 +30,8 @@ internal sealed class SessionScreen : IDisposable
     private readonly PanelCaption _sessionsCaption;
     private readonly PanelCaption _contentCaption;
     private readonly PanelCaption _previewCaption;
+    private readonly SessionSplitter _sessionSplitter;
+    private int _sessionsWidth = SessionSplitter.DefaultWidth;
     private readonly Tabs _tabs;
     private readonly Markdown _markdown;
     private readonly PreviewTextView _text;
@@ -255,7 +257,7 @@ internal sealed class SessionScreen : IDisposable
             Title = "Sessions",
             X = 0,
             Y = 0,
-            Width = 28,
+            Width = SessionSplitter.DefaultWidth,
             Height = Dim.Fill(),
         };
         _commands = new Label
@@ -282,6 +284,7 @@ internal sealed class SessionScreen : IDisposable
         BorderGlyph.Place(Sessions, '+', atEnd: true, NewSession, boxed: true);
         _contentCaption = PanelCaption.Attach(Content, () => ToggleMaximize(MaximizedPanel.Content), MinimizeContent);
         _previewCaption = PanelCaption.Attach(_preview, () => ToggleMaximize(MaximizedPanel.Preview), MinimizePreview);
+        _sessionSplitter = new SessionSplitter(Sessions, Content, ResizeSessions);
         ApplyLayout();
     }
 
@@ -742,6 +745,7 @@ internal sealed class SessionScreen : IDisposable
         }
 
         _disposed = true;
+        _sessionSplitter.Dispose();
         _app.Iteration -= OnIteration;
         if (_timeout is not null)
         {
@@ -1546,13 +1550,28 @@ internal sealed class SessionScreen : IDisposable
         return MaximizedPanel.Content;
     }
 
+    private void ResizeSessions(int width)
+    {
+        if (_modal || _disposed)
+        {
+            return;
+        }
+
+        _sessionsWidth = SessionSplitter.ClampWidth(width, Sessions.SuperView?.Viewport.Width ?? 80);
+        ApplyLayout();
+        _grid.Repaint();
+    }
+
     private void ApplyLayout()
     {
         WorkspaceLayout layout = WorkspaceLayout.Compute(_sessionsHidden, _contentHidden, _previewOpen, _maximized);
+        _sessionSplitter.Active = layout.SessionsVisible && layout.ContentVisible;
         Sessions.Visible = layout.SessionsVisible;
         Sessions.X = 0;
         Sessions.Y = 0;
-        Sessions.Width = layout.SessionsFill ? Dim.Fill() : layout.SessionsVisible ? 28 : 0;
+        Sessions.Width = layout.SessionsFill ? Dim.Fill() : layout.SessionsVisible
+            ? Dim.Func(_ => SessionSplitter.ClampWidth(_sessionsWidth, Sessions.SuperView?.Viewport.Width ?? 80))
+            : 0;
         Sessions.Height = Dim.Fill();
 
         Content.Visible = layout.ContentVisible;

@@ -66,6 +66,8 @@ Use F9 to run any command below. The direct shortcuts work in the session list, 
 | About | — | Show application information. |
 | Quit | Ctrl+Q | Quit my-tui, asking first if any session is running. Inside a live terminal, choose Quit from F9 instead. |
 
+Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, until you quit my-tui. Both panels keep a minimum width, and the terminal resizes to fit.
+
 Alt+Up and Alt+Down reorder sessions in the list. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program. Delete inside a live terminal goes to the running program rather than closing the session.
 
 A session you are not viewing shows ● after new output and ! after a bell. Sessions are restored from `~/.config/my-tui/state.json` but are not started automatically; select one and press Enter. Templates are stored in `~/.config/my-tui/templates.json`.
