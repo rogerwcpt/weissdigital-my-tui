@@ -18,6 +18,7 @@ try
 {
     app.Init();
     HostTheme.Load();
+    MyTui.Terminal.TerminalPalette.Load(HostTheme.ConfigPath());
     var window = new Window();
     screen = new SessionScreen(app);
     screen.AttachTitle(window);

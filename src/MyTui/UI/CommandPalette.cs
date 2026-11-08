@@ -18,13 +18,14 @@ internal static class CommandPalette
 
     internal const string Footer = "Palette  F9";
 
-    private readonly record struct Entry(string Title, string Detail, string Id);
+    internal readonly record struct Entry(string Title, string Detail, string Id);
 
     private static readonly Entry[] Entries =
     [
         new("New session", "Ctrl+N", "new"),
         new("Start the session", "Enter", "start"),
         new("Open folder", "", "open"),
+        new("Open selected file", "", "open-file"),
         new("List, tab, or preview", "Ctrl+O", "focus"),
         new("Next panel", "Ctrl+Tab", "next"),
         new("Previous panel", "Ctrl+Shift+Tab", "previous"),
@@ -48,7 +49,14 @@ internal static class CommandPalette
 
     private static readonly int ShortcutColumn = EntriesMax(static entry => entry.Detail.Length);
 
-    internal static string? Ask(IApplication app)
+    internal static IEnumerable<Entry> Matches(string text, bool filesActive) =>
+        Entries.Where(entry =>
+            (filesActive || entry.Id != "open-file")
+            && (text.Length == 0
+                || entry.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
+                || entry.Detail.Contains(text, StringComparison.OrdinalIgnoreCase)));
+
+    internal static string? Ask(IApplication app, bool filesActive)
     {
         var shown = new ObservableCollection<string>();
         List<Entry> matches = [];
@@ -89,10 +97,7 @@ internal static class CommandPalette
 
             filling = true;
             string text = query.Text?.ToString()?.Trim() ?? "";
-            matches = Entries.Where(entry =>
-                text.Length == 0
-                || entry.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
-                || entry.Detail.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
+            matches = Matches(text, filesActive).ToList();
             int width = Math.Max(list.Viewport.Width, NameColumn + ShortcutColumn + 2);
             shown.Clear();
             foreach (Entry entry in matches)

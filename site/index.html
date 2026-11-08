@@ -78,6 +78,18 @@ brew install rogerwcpt/my-tui/my-tui</code></pre>
           <p>The other route is the <a href="https://github.com/rogerwcpt/weissdigital-my-tui/releases/latest">latest release</a>. Unpack <code>my-tui-*-osx-arm64.tar.gz</code> and leave the dylib next to <code>my-tui</code>. A browser download is quarantined: <code>xattr -d com.apple.quarantine my-tui</code>.</p>
         </section>
       </div>
+
+      <section class="chapter" aria-labelledby="configure">
+        <h2 id="configure">Configure</h2>
+        <p class="deck">Optional settings in <code>~/.config/<wbr><span class="keep">my-tui</span>/<wbr>config.json</code>.</p>
+        <pre><code>{
+  "theme": "Terminal",
+  "leader": "ctrl+b",
+  "terminalPalette": "vscode"
+}</code></pre>
+        <p><code>theme</code> sets the chrome colors, and the command palette saves it for you. <code>leader</code> replaces Ctrl+B with <code>ctrl+</code> a letter, <code>ctrl+space</code>, or <code>ctrl+backslash</code>.</p>
+        <p><code>terminalPalette</code> sets the 16 ANSI colors inside sessions: <code>vscode</code> (VS Code Dark+, the default), <code>xterm</code>, or <code>tomorrow-night</code>. An array of up to 16 <code>#RRGGBB</code> strings sets colors 0–15 in order; entries you leave out keep VS Code Dark+. Restart my-tui after a change.</p>
+      </section>
     </main>
 
     <footer class="colophon">

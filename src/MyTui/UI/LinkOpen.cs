@@ -12,27 +12,47 @@ internal static class LinkOpen
             return false;
         }
 
+        return TryLaunch(url);
+    }
+
+    internal static bool TryOpenFile(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        return TryLaunch(Path.GetFullPath(path));
+    }
+
+    internal static ProcessStartInfo? StartInfo(string target)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return new ProcessStartInfo(target) { UseShellExecute = true };
+        }
+
+        string? program = OperatingSystem.IsMacOS() ? "open" : OperatingSystem.IsLinux() ? "xdg-open" : null;
+        return program is null ? null : new ProcessStartInfo
+        {
+            FileName = program,
+            ArgumentList = { target },
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+    }
+
+    private static bool TryLaunch(string target)
+    {
         try
         {
-            if (OperatingSystem.IsWindows())
-            {
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
-                return true;
-            }
-
-            string? program = OperatingSystem.IsMacOS() ? "open" : OperatingSystem.IsLinux() ? "xdg-open" : null;
-            if (program is null)
+            ProcessStartInfo? info = StartInfo(target);
+            if (info is null)
             {
                 return false;
             }
 
-            using Process? process = Process.Start(new ProcessStartInfo
-            {
-                FileName = program,
-                ArgumentList = { url },
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
+            using Process? process = Process.Start(info);
             return process is not null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException)

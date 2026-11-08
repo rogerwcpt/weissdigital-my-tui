@@ -33,6 +33,7 @@ internal sealed class TerminalSession : IDisposable
         Columns = Math.Max(1, columns);
         Rows = Math.Max(1, rows);
         _vt = new VtTerminal(Columns, Rows, Configure);
+        _vt.SetColorPalette(TerminalPalette.Apply(_vt.ColorPaletteDefault));
     }
 
     internal int Columns { get; private set; }

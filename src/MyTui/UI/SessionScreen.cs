@@ -878,7 +878,7 @@ internal sealed class SessionScreen : IDisposable
         string? id;
         try
         {
-            id = CommandPalette.Ask(_app);
+            id = CommandPalette.Ask(_app, FilesActive);
         }
         finally
         {
@@ -895,6 +895,9 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case "open":
                 OpenFolder();
+                break;
+            case "open-file":
+                OpenSelectedFile();
                 break;
             case "focus":
                 ToggleFocus();
@@ -1045,6 +1048,31 @@ internal sealed class SessionScreen : IDisposable
 
         _app.Clipboard?.TrySetClipboardData(text);
         Note("Copied");
+    }
+
+    private bool FilesActive =>
+        _manager?.Focused?.Tab == SessionTab.Files && Content.Visible && _tabs.Visible;
+
+    private void OpenSelectedFile()
+    {
+        if (!FilesActive || _modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        if (_tree.SelectedObject is not { Directory: false } selected)
+        {
+            Note("Select a file to open");
+            return;
+        }
+
+        if (!Workspace.IsInside(session.Cwd, selected.Path) || !LinkOpen.TryOpenFile(selected.Path))
+        {
+            Note("Could not open the file");
+            return;
+        }
+
+        Note("Opened " + selected.Name);
     }
 
     private void OpenLink(string url)

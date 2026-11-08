@@ -42,6 +42,57 @@ public class TerminalSessionTests
     }
 
     [UnixFact(Timeout = 15000)]
+    public async Task AnsiColors_UseTheVsCodePaletteByDefault()
+    {
+        TerminalPalette.Load("/nonexistent/config.json");
+        TerminalSession? session = null;
+        try
+        {
+            session = TerminalSession.Start(
+                "/bin/sh",
+                ["/bin/sh", "-c", "printf '\\033[31mR\\033[94mB\\033[0m'"],
+                80,
+                24,
+                environment: CleanEnv());
+            ScreenFrame frame = WaitFor(session, value => value.Contains("RB"));
+            PaintedCell red = Cell(frame, "R");
+            PaintedCell blue = Cell(frame, "B");
+            Assert.Equal((0xCD, 0x31, 0x31), ((int)red.ForegroundRed, (int)red.ForegroundGreen, (int)red.ForegroundBlue));
+            Assert.Equal((0x3B, 0x8E, 0xEA), ((int)blue.ForegroundRed, (int)blue.ForegroundGreen, (int)blue.ForegroundBlue));
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData("""{"terminalPalette":"xterm"}""", 4, 0x00, 0x00, 0xEE)]
+    [InlineData("""{"terminalPalette":"Tomorrow-Night"}""", 1, 0xCC, 0x66, 0x66)]
+    [InlineData("""{"terminalPalette":["#000000","#FF8800"]}""", 1, 0xFF, 0x88, 0x00)]
+    [InlineData("""{"terminalPalette":["#000000","#FF8800"]}""", 4, 0x24, 0x72, 0xC8)]
+    [InlineData("""{"terminalPalette":"nope"}""", 1, 0xCD, 0x31, 0x31)]
+    [InlineData("""{"terminalPalette":["#00000"]}""", 1, 0xCD, 0x31, 0x31)]
+    public void TerminalPalette_ReadsConfig(string json, int index, int r, int g, int b)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"my-tui-palette-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, json);
+            TerminalPalette.Load(path);
+            Ghostty.Vt.Types.ColorRgb color = TerminalPalette.Apply(new Ghostty.Vt.Types.ColorRgb[256])[index];
+            Assert.Equal((r, g, b), ((int)color.R, (int)color.G, (int)color.B));
+        }
+        finally
+        {
+            File.Delete(path);
+            TerminalPalette.Load(path);
+        }
+    }
+
+    [UnixFact(Timeout = 15000)]
     public async Task UrlAt_ReadsOsc8PlainTextAndAWrappedUrl()
     {
         TerminalSession? session = null;
