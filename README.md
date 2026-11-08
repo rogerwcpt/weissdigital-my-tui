@@ -36,9 +36,39 @@ The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar
 dotnet run --project src/MyTui
 ```
 
-F9 is the Command Palette where you fill find all the commands in one list.
+F9 opens the Command Palette, where you will find all the commands in one list. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running.
 
-Ctrl+N creates a session. The command defaults to `$SHELL` and can be edited before it starts. Direct keys work in the session list, the file tree, the preview, and an idle or exited session. Inside a live terminal, Ctrl+B is the leader: the next key is the command, and Ctrl+B a second time sends Ctrl+B to the program. Ctrl+O moves between the session list, the open tab, and the preview. Ctrl+T switches Terminal and Files. Ctrl+P opens or closes the preview panel on the right; it stays there while you use the terminal. Ctrl+E edits the session. Ctrl+R refreshes Files. Delete closes a session, including the key labeled Delete on a Mac. A running session asks first. Delete inside a running terminal still deletes a character. Enter starts a stopped session. Alt+Up and Alt+Down reorder the list. F1 lists the keys. F2 applies a template into the new-session dialog. Shift+PageUp and Shift+PageDown scroll the terminal. The mouse wheel scrolls the history in a shell, scrolls a full-screen program, and is delivered to a program that tracks the mouse. A session you are not viewing shows ● after new output and ! after a bell. Ctrl+Q quits from outside a live terminal, and quitting asks first while any session is still running. Inside a live terminal Ctrl+Q goes to the program; Ctrl+B q quits from there. An optional `leader` in `~/.config/my-tui/config.json` (`ctrl+` a letter, `ctrl+space`, or `ctrl+backslash`) replaces Ctrl+B. Sessions are restored from `~/.config/my-tui/state.json` and are not started until Enter. Templates are `~/.config/my-tui/templates.json`.
+### Commands
+
+Use F9 to run any command below. The direct shortcuts work in the session list, Files, the preview, and an idle or exited terminal. Inside a live terminal, most shortcuts go to the running program instead; use F9 for my-tui commands. Copy and paste shortcuts also work inside a live terminal if your host terminal passes them through.
+
+| Command | Shortcut | What it does |
+| --- | --- | --- |
+| New session | Ctrl+N | Create a session. The command defaults to `$SHELL` and can be edited before starting. |
+| Duplicate session | — | Start a fresh copy of the selected session. |
+| Start the session | Enter | Start a stopped session. |
+| Open folder | — | Choose a folder and start a new shell session there. |
+| Open selected file | — | Open the selected file in its system-default application while Files is active. |
+| List, tab, or preview | Ctrl+O | Move focus between the session list, the open tab, and the preview. |
+| Next / previous panel | Ctrl+Tab / Ctrl+Shift+Tab | Move focus between visible panels. |
+| Hide or show Sessions | F4 | Toggle the session list. |
+| Maximize or restore | F11 | Maximize the focused panel or restore the layout. |
+| Terminal or Files | Ctrl+T | Switch between the Terminal and Files tabs. |
+| Open or close the preview | Ctrl+P | Toggle the preview panel on the right; it stays open while you use the terminal. |
+| Edit the session | Ctrl+E | Edit the selected session's settings. |
+| Rename the session | F6 | Change the selected session's name. |
+| Refresh Files | Ctrl+R | Refresh the file tree. |
+| Templates | F2 | Apply a saved template in the new-session dialog. |
+| Close the session | Delete | Close the selected session, asking first if it is running. The Mac key labeled Delete also works outside a live terminal. |
+| Copy selection or screen | Ctrl+Shift+C | Copy selected text, or the visible terminal screen when nothing is selected. |
+| Paste | Ctrl+Shift+V | Paste clipboard text into the terminal. |
+| Theme | — | Choose and save the UI theme. |
+| About | — | Show application information. |
+| Quit | Ctrl+Q | Quit my-tui, asking first if any session is running. Inside a live terminal, choose Quit from F9 instead. |
+
+Alt+Up and Alt+Down reorder sessions in the list. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program. Delete inside a live terminal goes to the running program rather than closing the session.
+
+A session you are not viewing shows ● after new output and ! after a bell. Sessions are restored from `~/.config/my-tui/state.json` but are not started automatically; select one and press Enter. Templates are stored in `~/.config/my-tui/templates.json`.
 
 Open the command palette with F9 and choose **Duplicate session** to immediately start a fresh terminal using the selected session’s folder, command, arguments, and environment. The copy is named `<original>-2`, then `-3`, and so on, skipping names already in use. The original session keeps running unchanged.
 
