@@ -385,11 +385,18 @@ internal sealed class PtySession : IDisposable
 
     private void Reap()
     {
-        if (_pid <= 0 || Interlocked.Exchange(ref _reaped, 1) != 0)
+        if (_pid > 0 && Interlocked.Exchange(ref _reaped, 1) == 0)
         {
-            return;
+            WaitForLeader();
         }
 
+        // The leader often exits before a grandchild runs the signal. A zombie
+        // still answers kill(pid, 0), so close has to wait until the group is empty.
+        FinishGroup();
+    }
+
+    private void WaitForLeader()
+    {
         long deadline = Environment.TickCount64 + 500;
         while (Environment.TickCount64 < deadline)
         {
@@ -438,6 +445,52 @@ internal sealed class PtySession : IDisposable
                 throw new IOException(PtyNative.Describe("waitpid"));
             }
         }
+    }
+
+    private void FinishGroup()
+    {
+        if (_pid <= 1)
+        {
+            return;
+        }
+
+        // Dispose already sent SIGTERM. Give a scheduled grandchild a moment to exit.
+        if (WaitUntilGroupEmpty(TimeSpan.FromMilliseconds(100)))
+        {
+            return;
+        }
+
+        Signal(PtyNative.SigKill);
+        WaitUntilGroupEmpty(TimeSpan.FromSeconds(2));
+    }
+
+    private bool WaitUntilGroupEmpty(TimeSpan timeout)
+    {
+        long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        while (true)
+        {
+            if (GroupEmpty())
+            {
+                return true;
+            }
+
+            if (Environment.TickCount64 >= deadline)
+            {
+                return false;
+            }
+
+            Thread.Sleep(10);
+        }
+    }
+
+    private bool GroupEmpty()
+    {
+        if (PtyNative.Kill(-_pid, 0) == 0)
+        {
+            return false;
+        }
+
+        return Marshal.GetLastPInvokeError() == PtyNative.Esrch;
     }
 
     private static int OpenFlags() => PtyNative.OpenFlags;
