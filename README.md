@@ -36,39 +36,41 @@ The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar
 dotnet run --project src/MyTui
 ```
 
-F9 opens the Command Palette, where you will find all the commands in one list. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running.
+F9 opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running.
 
 ### Commands
 
-Use F9 to run any command below. The direct shortcuts work in the session list, Files, the preview, and an idle or exited terminal. Inside a live terminal, most shortcuts go to the running program instead; use F9 for my-tui commands. Copy and paste shortcuts also work inside a live terminal if your host terminal passes them through.
+Host terminals and agent CLIs swallow most key chords, so my-tui has no per-command shortcuts. F9 is the one key it keeps, plus Ctrl+Shift+C and Ctrl+Shift+V for copy and paste when your host terminal passes them through.
 
-| Command | Shortcut | What it does |
+| Group | Command | What it does |
 | --- | --- | --- |
-| New session | Ctrl+N | Create a session. The command defaults to `$SHELL` and can be edited before starting. |
-| Duplicate session | — | Start a fresh copy of the selected session. |
-| Start the session | Enter | Start a stopped session. |
-| Open folder | — | Choose a folder and start a new shell session there. |
-| Open selected file | — | Open the selected file in its system-default application while Files is active. |
-| List, tab, or preview | Ctrl+O | Move focus between the session list, the open tab, and the preview. |
-| Next / previous panel | Ctrl+Tab / Ctrl+Shift+Tab | Move focus between visible panels. |
-| Hide or show Sessions | F4 | Toggle the session list. |
-| Maximize or restore | F11 | Maximize the focused panel or restore the layout. |
-| Terminal or Files | Ctrl+T | Switch between the Terminal and Files tabs. |
-| Open or close the preview | Ctrl+P | Toggle the preview panel on the right; it stays open while you use the terminal. |
-| Edit the session | Ctrl+E | Edit the selected session's settings. |
-| Rename the session | F6 | Change the selected session's name. |
-| Refresh Files | Ctrl+R | Refresh the file tree. |
-| Templates | F2 | Apply a saved template in the new-session dialog. |
-| Close the session | Delete | Close the selected session, asking first if it is running. The Mac key labeled Delete also works outside a live terminal. |
-| Copy selection or screen | Ctrl+Shift+C | Copy selected text, or the visible terminal screen when nothing is selected. |
-| Paste | Ctrl+Shift+V | Paste clipboard text into the terminal. |
-| Theme | — | Choose and save the UI theme. |
-| About | — | Show application information. |
-| Quit | Ctrl+Q | Quit my-tui, asking first if any session is running. Inside a live terminal, choose Quit from F9 instead. |
+| Session | Close the session | Close the selected session, asking first if it is running. |
+| Session | Duplicate session | Start a fresh copy of the selected session. |
+| Session | Edit the session | Edit the selected session's settings. |
+| Session | New session | Create a session. The command defaults to `$SHELL` and can be edited before starting. |
+| Session | Open folder | Choose a folder and start a new shell session there. |
+| Session | Rename the session | Change the selected session's name. |
+| Session | Start the session | Start a stopped session. Enter in the session list does the same. |
+| Session | Templates | Apply a saved template in the new-session dialog. |
+| Layout | Hide or show Sessions | Toggle the session list. |
+| Layout | List, tab, or preview | Move focus between the session list, the open tab, and the preview. |
+| Layout | Maximize or restore | Maximize the focused panel or restore the layout. |
+| Layout | Next / previous panel | Move focus between visible panels. |
+| Layout | Open or close the preview | Toggle the preview panel on the right; it stays open while you use the terminal. |
+| Layout | Terminal or Files | Switch between the Terminal and Files tabs. |
+| Files | Open selected file | Open the selected file in its system-default application while Files is active. |
+| Files | Refresh Files | Refresh the file tree. |
+| Clipboard | Copy selection or screen (Ctrl+Shift+C) | Copy selected text from the focused preview or terminal; with no selection, copy the preview contents or visible terminal screen. |
+| Clipboard | Paste (Ctrl+Shift+V) | Paste clipboard text into the terminal. |
+| App | About | Show application information. |
+| App | Quit | Quit my-tui, asking first if any session is running. |
+| App | Theme | Choose and save the UI theme. |
+
+Drag in a preview to select text; releasing copies it, as in the terminal. Double-click selects a word and triple-click a line in plain-text previews. In plain-text previews, Ctrl+A selects all and Shift+Left/Right extends the selection. Previews are read-only: Ctrl+Shift+V pastes into the session's terminal, not the file.
 
 Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, until you quit my-tui. Both panels keep a minimum width, and the terminal resizes to fit.
 
-Alt+Up and Alt+Down reorder sessions in the list. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program. Delete inside a live terminal goes to the running program rather than closing the session.
+Alt+Up and Alt+Down reorder sessions in the list. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program.
 
 A session you are not viewing shows ● after new output and ! after a bell. Sessions are restored from `~/.config/my-tui/state.json` but are not started automatically; select one and press Enter. Templates are stored in `~/.config/my-tui/templates.json`.
 
@@ -83,13 +85,11 @@ Settings live in `~/.config/my-tui/config.json`. Every key is optional.
 ```json
 {
   "theme": "Terminal",
-  "leader": "ctrl+b",
   "terminalPalette": "vscode"
 }
 ```
 
 - `theme` sets the chrome colors. Pick it from the command palette, which saves it here.
-- `leader` replaces Ctrl+B: `ctrl+` a letter, `ctrl+space`, or `ctrl+backslash`.
 - `terminalPalette` sets the 16 ANSI colors inside sessions. Presets are `vscode` (VS Code Dark+, the default), `xterm`, and `tomorrow-night`. An array of up to 16 `#RRGGBB` strings sets colors 0–15 in order (black, red, green, yellow, blue, magenta, cyan, white, then the bright versions); entries you leave out keep VS Code Dark+. An unknown name or a bad color falls back to VS Code Dark+. Colors 16–255 and 24-bit colors are not affected. Restart my-tui after changing it.
 
 ```json

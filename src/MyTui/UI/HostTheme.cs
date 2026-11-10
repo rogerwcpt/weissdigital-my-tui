@@ -132,16 +132,18 @@ internal static class HostTheme
     internal static Scheme Preview()
     {
         TuiAttribute ink = _scheme.Normal;
-        TuiAttribute focus = _scheme.Focus;
+        // Selection: the plain-text view draws it with Highlight and Markdown with Focus. Theme values are
+        // often accent ink on the same background, which is hard to see, so both use reverse video.
+        TuiAttribute selection = ink with { Style = ink.Style | TextStyle.Reverse };
         return new Scheme
         {
             Normal = ink,
             HotNormal = _scheme.HotNormal,
-            Focus = focus,
+            Focus = selection,
             HotFocus = _scheme.HotFocus,
             Active = _scheme.Active,
             HotActive = _scheme.HotActive,
-            Highlight = _scheme.Highlight,
+            Highlight = selection,
             Editable = ink,
             ReadOnly = ink,
             Disabled = _scheme.Disabled,

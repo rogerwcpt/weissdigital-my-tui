@@ -33,14 +33,13 @@ internal sealed class SessionScreen : IDisposable
     private readonly SessionSplitter _sessionSplitter;
     private int _sessionsWidth = SessionSplitter.DefaultWidth;
     private readonly Tabs _tabs;
-    private readonly Markdown _markdown;
+    private readonly PreviewMarkdown _markdown;
     private readonly PreviewTextView _text;
     private readonly Label _note;
     private readonly Label _hint;
     private readonly Label _commands;
     private readonly FramePacer _pacer = new();
     private long _fastUntil;
-    private readonly LeaderState _leader = new();
     private readonly HashSet<Session> _unseen = [];
     private readonly HashSet<Session> _rang = [];
     private readonly Dictionary<Session, long> _quietUntil = [];
@@ -58,13 +57,6 @@ internal sealed class SessionScreen : IDisposable
     private Window? _window;
     private string _statusNote = "";
     private long _statusUntil;
-
-    /// <summary>
-    /// Mac Delete is Backspace. Forward delete is Delete or DeleteChar. Any of them closes from outside a live terminal.
-    /// </summary>
-    internal static bool IsCloseKey(Key key) =>
-        !key.IsCtrl && !key.IsAlt && !key.IsShift
-        && (key == Key.Backspace || key == Key.Delete || key == Key.DeleteChar);
 
     /// <summary>Selected session row, with a close mark in the last column.</summary>
     internal static string ActiveRow(string label, int width)
@@ -124,7 +116,7 @@ internal sealed class SessionScreen : IDisposable
     internal SessionScreen(IApplication app)
     {
         _app = app;
-        _grid = new CellGridView(HandleChord, StartFocused, CloseSelected, CopyText, OpenLink);
+        _grid = new CellGridView(HandleChord, StartFocused, CopyText, OpenLink);
         _hint = new Label
         {
             X = 0,
@@ -132,7 +124,7 @@ internal sealed class SessionScreen : IDisposable
             Width = Dim.Fill(),
             Height = 1,
             CanFocus = false,
-            Text = "Ctrl+N creates a session. Ctrl+Shift+P opens commands.",
+            Text = "F9 opens commands, including New session.",
         };
         _tree = new FileTree(this, new DelegateTreeBuilder<FileNode>(
             node => Workspace.Children(_root, node.Path),
@@ -167,7 +159,7 @@ internal sealed class SessionScreen : IDisposable
 
             ShowPreview(session);
         };
-        _markdown = new Markdown
+        _markdown = new PreviewMarkdown
         {
             X = 0,
             Y = 0,
@@ -178,7 +170,8 @@ internal sealed class SessionScreen : IDisposable
             HotKeySpecifier = new Rune('\uE000'),
         };
         _markdown.SetScheme(HostTheme.Preview());
-        _text = new PreviewTextView { Visible = false };
+        _markdown.Selected = CopyText;
+        _text = new PreviewTextView { Visible = false, Selected = CopyText };
         _text.SetScheme(HostTheme.Preview());
         _note = new Label
         {
@@ -295,14 +288,11 @@ internal sealed class SessionScreen : IDisposable
         window.ClearingViewport += (_, _) => _grid.Repaint();
         window.KeyDown += (_, key) =>
         {
-            // A live terminal consumes Ctrl+Q and may still bubble the same event.
-            if (key.Handled || _modal || key != Key.Q.WithCtrl || key.IsAlt || key.IsShift)
+            // Terminal.Gui's quit key would stop the app without asking. Quit is in the palette.
+            if (!key.Handled && key == Key.Q.WithCtrl && !key.IsAlt && !key.IsShift)
             {
-                return;
+                key.Handled = true;
             }
-
-            RequestQuit();
-            key.Handled = true;
         };
     }
 
@@ -317,7 +307,6 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        AppKeys.Load();
         _manager = SessionManager.Load(StateStore.DefaultPath());
         RefreshLabels();
         if (_manager.Sessions.Count > 0)
@@ -340,66 +329,15 @@ internal sealed class SessionScreen : IDisposable
 
     internal bool HandleChord(Key key, bool inTerminal)
     {
-        KeyRoute route = AppKeys.Route(key, inTerminal, _leader, Environment.TickCount64, out AppCommand command);
-        if (route == KeyRoute.Forward)
+        if (!AppKeys.TryRoute(key, out AppCommand command))
         {
             return false;
         }
 
-        if (route == KeyRoute.Run)
-        {
-            Run(command);
-        }
-
-        UpdateStatus();
-        return true;
-    }
-
-    private void Run(AppCommand command)
-    {
         switch (command)
         {
             case AppCommand.Menu:
                 ShowPalette();
-                break;
-            case AppCommand.NewSession:
-                NewSession();
-                break;
-            case AppCommand.CycleFocus:
-                ToggleFocus();
-                break;
-            case AppCommand.NextPanel:
-                CyclePanels(forward: true);
-                break;
-            case AppCommand.PreviousPanel:
-                CyclePanels(forward: false);
-                break;
-            case AppCommand.HideSessions:
-                ToggleSessions();
-                break;
-            case AppCommand.Maximize:
-                ToggleMaximize(PanelUnderFocus());
-                break;
-            case AppCommand.CycleTab:
-                CycleTab();
-                break;
-            case AppCommand.Preview:
-                TogglePreview();
-                break;
-            case AppCommand.Edit:
-                EditSession();
-                break;
-            case AppCommand.Rename:
-                RenameSession();
-                break;
-            case AppCommand.Refresh:
-                RefreshFiles();
-                break;
-            case AppCommand.Templates:
-                Templates();
-                break;
-            case AppCommand.Close:
-                CloseSelected();
                 break;
             case AppCommand.Copy:
                 CopyVisible();
@@ -407,13 +345,10 @@ internal sealed class SessionScreen : IDisposable
             case AppCommand.Paste:
                 PasteClipboard();
                 break;
-            case AppCommand.Help:
-                ShowPalette();
-                break;
-            case AppCommand.Quit:
-                RequestQuit();
-                break;
         }
+
+        UpdateStatus();
+        return true;
     }
 
     private void RequestQuit()
@@ -1050,6 +985,20 @@ internal sealed class SessionScreen : IDisposable
 
     private void CopyVisible()
     {
+        if (PreviewHasFocus())
+        {
+            if (_text.Visible)
+            {
+                CopyText(string.IsNullOrEmpty(_text.SelectedText) ? _text.Content : _text.SelectedText);
+            }
+            else if (_markdown.Visible)
+            {
+                CopyText(string.IsNullOrEmpty(_markdown.SelectedText) ? _markdown.Text : _markdown.SelectedText);
+            }
+
+            return;
+        }
+
         string? text = _grid.SelectionText();
         if (string.IsNullOrEmpty(text))
         {
@@ -1061,13 +1010,19 @@ internal sealed class SessionScreen : IDisposable
 
     private void CopyText(string text)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrEmpty(text))
         {
             return;
         }
 
-        _app.Clipboard?.TrySetClipboardData(text);
-        Note("Copied");
+        if (_app.Clipboard?.TrySetClipboardData(text) == true)
+        {
+            Note("Copied");
+        }
+        else
+        {
+            Note("Could not access the clipboard");
+        }
     }
 
     private bool FilesActive =>
@@ -1992,12 +1947,6 @@ internal sealed class SessionScreen : IDisposable
                 key.Handled = true;
                 return;
             }
-
-            if (IsCloseKey(key))
-            {
-                CloseSelected();
-                key.Handled = true;
-            }
         };
     }
 
@@ -2011,13 +1960,6 @@ internal sealed class SessionScreen : IDisposable
         {
             if (_screen.HandleChord(key))
             {
-                key.Handled = true;
-                return true;
-            }
-
-            if (IsCloseKey(key))
-            {
-                _screen.CloseSelected();
                 key.Handled = true;
                 return true;
             }
@@ -2089,13 +2031,6 @@ internal sealed class SessionScreen : IDisposable
         {
             if (_screen.HandleChord(key))
             {
-                key.Handled = true;
-                return true;
-            }
-
-            if (IsCloseKey(key))
-            {
-                _screen.CloseSelected();
                 key.Handled = true;
                 return true;
             }

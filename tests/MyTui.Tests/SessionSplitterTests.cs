@@ -112,11 +112,6 @@ public class SessionSplitterTests
         Assert.Equal(44, screen.Content.Frame.X);
         Assert.Equal(56, screen.Content.Frame.Width);
 
-        Assert.True(screen.HandleChord(Key.F4));
-        Assert.False(screen.Sessions.Visible);
-        Assert.True(screen.HandleChord(Key.F4));
-        Assert.Equal(44, screen.Sessions.Frame.Width);
-
         PanelCaption caption = screen.Sessions.Border.GetOrCreateView().SubViews.OfType<PanelCaption>().Single();
         caption.Activate(0);
         Assert.Equal(100, screen.Sessions.Frame.Width);

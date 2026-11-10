@@ -19,6 +19,11 @@ internal sealed class PreviewTextView : View
 
     private readonly HorizontalBar _horizontal;
     private string[] _lines = [""];
+    private string _content = "";
+    private int[] _lineStarts = [0];
+    private int _anchor;
+    private int _caret;
+    private bool _dragging;
     private bool _syncingBar;
     private int _drawnBarColumn = int.MinValue;
 
@@ -40,12 +45,39 @@ internal sealed class PreviewTextView : View
 
     internal bool HasHorizontalBar => _horizontal.Visible;
 
+    /// <summary>Called with the text when a drag, double-click, or triple-click ends with a selection.</summary>
+    internal Action<string>? Selected { get; set; }
+
+    internal string SelectedText => _content[Math.Min(_anchor, _caret)..Math.Max(_anchor, _caret)];
+
+    internal void SelectAll()
+    {
+        _anchor = 0;
+        _caret = _content.Length;
+        SetNeedsDraw();
+    }
+
     internal string Content
     {
+        get => _content;
         set
         {
             string normalized = value.Replace("\r\n", "\n").Replace('\r', '\n');
+            _content = normalized;
             _lines = normalized.Length == 0 ? [""] : normalized.Split('\n');
+            _lineStarts = new int[_lines.Length];
+            for (int i = 1; i < _lines.Length; i++)
+            {
+                _lineStarts[i] = _lineStarts[i - 1] + _lines[i - 1].Length + 1;
+            }
+
+            if (_dragging)
+            {
+                App?.Mouse.UngrabMouse();
+            }
+
+            _dragging = false;
+            _anchor = _caret = 0;
             int width = 1;
             foreach (string line in _lines)
             {
@@ -142,14 +174,126 @@ internal sealed class PreviewTextView : View
             return ScrollBy(lines: -3, columns: 0);
         }
 
-        return base.OnMouseEvent(mouse);
+        if (mouse.Position is not { } position)
+        {
+            return base.OnMouseEvent(mouse);
+        }
+
+        int row = Math.Clamp(Viewport.Y + position.Y, 0, _lines.Length - 1);
+        int column = Math.Max(0, Viewport.X + position.X);
+        int offset = OffsetAt(row, column);
+        if (_dragging)
+        {
+            _caret = offset;
+            if (mouse.Flags.HasFlag(MouseFlags.LeftButtonReleased))
+            {
+                _dragging = false;
+                App?.Mouse.UngrabMouse();
+                PublishSelection();
+            }
+
+            SetNeedsDraw();
+            return true;
+        }
+
+        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonTripleClicked))
+        {
+            _anchor = _lineStarts[row];
+            _caret = row + 1 < _lines.Length ? _lineStarts[row + 1] : _content.Length;
+            PublishSelection();
+        }
+        else if (mouse.Flags.HasFlag(MouseFlags.LeftButtonDoubleClicked))
+        {
+            _anchor = _caret = offset;
+            while (_anchor > _lineStarts[row] && !char.IsWhiteSpace(_content[_anchor - 1]))
+            {
+                _anchor--;
+            }
+
+            int end = _lineStarts[row] + _lines[row].Length;
+            while (_caret < end && !char.IsWhiteSpace(_content[_caret]))
+            {
+                _caret++;
+            }
+
+            PublishSelection();
+        }
+        else if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed))
+        {
+            SetFocus();
+            if (!mouse.Flags.HasFlag(MouseFlags.Shift))
+            {
+                _anchor = offset;
+            }
+
+            _caret = offset;
+            _dragging = true;
+            App?.Mouse.GrabMouse(this);
+        }
+        else
+        {
+            return base.OnMouseEvent(mouse);
+        }
+
+        SetNeedsDraw();
+        return true;
+    }
+
+    private void PublishSelection()
+    {
+        string text = SelectedText;
+        if (text.Length > 0)
+        {
+            Selected?.Invoke(text);
+        }
+    }
+
+    private int OffsetAt(int row, int column)
+    {
+        int visual = 0;
+        int offset = _lineStarts[row];
+        foreach (Rune rune in _lines[row].EnumerateRunes())
+        {
+            int next = rune.Value == '\t' ? (visual / 4 + 1) * 4 : visual + 1;
+            if (column < next)
+            {
+                break;
+            }
+
+            visual = next;
+            offset += rune.Utf16SequenceLength;
+        }
+
+        return offset;
     }
 
     protected override bool OnKeyDown(Key key)
     {
-        if (key == Key.Q.WithCtrl && !key.IsAlt && !key.IsShift)
+        if (key == Key.A.WithCtrl)
         {
-            return false;
+            SelectAll();
+            return true;
+        }
+
+        if (key == Key.Enter && SelectedText.Length > 0)
+        {
+            PublishSelection();
+            _anchor = _caret;
+            SetNeedsDraw();
+            return true;
+        }
+
+        if (key == Key.CursorLeft.WithShift || key == Key.CursorRight.WithShift)
+        {
+            int delta = key == Key.CursorLeft.WithShift ? -1 : 1;
+            _caret = Math.Clamp(_caret + delta, 0, _content.Length);
+            if (_caret > 0 && _caret < _content.Length && char.IsLowSurrogate(_content[_caret]))
+            {
+                _caret += delta;
+            }
+
+            SetNeedsDraw();
+            return true;
         }
 
         if (key.IsCtrl || key.IsAlt)
@@ -240,8 +384,15 @@ internal sealed class PreviewTextView : View
     {
         int column = 0;
         int visual = 0;
+        int lineIndex = Viewport.Y + row;
+        int offset = lineIndex < _lineStarts.Length ? _lineStarts[lineIndex] : _content.Length;
+        TuiAttribute normal = GetAttributeForRole(VisualRole.Normal);
+        TuiAttribute selected = GetAttributeForRole(VisualRole.Highlight);
         foreach (Rune rune in line.EnumerateRunes())
         {
+            bool isSelected = offset >= Math.Min(_anchor, _caret) && offset < Math.Max(_anchor, _caret);
+            SetAttribute(isSelected ? selected : normal);
+            offset += rune.Utf16SequenceLength;
             if (rune.Value == '\t')
             {
                 int stop = (visual / 4 + 1) * 4;
@@ -273,6 +424,7 @@ internal sealed class PreviewTextView : View
             visual++;
         }
 
+        SetAttribute(normal);
         while (column < width)
         {
             AddRune(column, row, new Rune(' '));

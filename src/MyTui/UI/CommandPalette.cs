@@ -9,8 +9,7 @@ using Terminal.Gui.Views;
 namespace MyTui.UI;
 
 /// <summary>
-/// One list of commands. Ctrl+Shift+P opens it from anywhere, including a live terminal.
-/// Cmd+Shift+P stays with the host and never arrives here.
+/// One list of commands, in groups. F9 opens it from anywhere, including a live terminal.
 /// </summary>
 internal static class CommandPalette
 {
@@ -18,33 +17,35 @@ internal static class CommandPalette
 
     internal const string Footer = "Palette  F9";
 
-    internal readonly record struct Entry(string Title, string Detail, string Id);
+    internal readonly record struct Entry(string Group, string Title, string Detail, string Id);
 
-    private static readonly Entry[] Entries =
+    private static readonly string[] Groups = ["Session", "Layout", "Files", "Clipboard", "App"];
+
+    private static readonly Entry[] Entries = Sort(
     [
-        new("New session", "Ctrl+N", "new"),
-        new("Duplicate session", "", "duplicate"),
-        new("Start the session", "Enter", "start"),
-        new("Open folder", "", "open"),
-        new("Open selected file", "", "open-file"),
-        new("List, tab, or preview", "Ctrl+O", "focus"),
-        new("Next panel", "Ctrl+Tab", "next"),
-        new("Previous panel", "Ctrl+Shift+Tab", "previous"),
-        new("Hide or show Sessions", "F4", "hide"),
-        new("Maximize or restore", "F11", "maximize"),
-        new("Terminal or Files", "Ctrl+T", "tab"),
-        new("Open or close the preview", "Ctrl+P", "preview"),
-        new("Edit the session", "Ctrl+E", "edit"),
-        new("Rename the session", "F6", "rename"),
-        new("Refresh Files", "Ctrl+R", "refresh"),
-        new("Templates", "F2", "templates"),
-        new("Close the session", "Delete", "close"),
-        new("Copy selection or screen", "Ctrl+Shift+C", "copy"),
-        new("Paste", "Ctrl+Shift+V", "paste"),
-        new("Theme", "", "theme"),
-        new("About", "", "about"),
-        new("Quit", "Ctrl+Q", "quit"),
-    ];
+        new("Session", "New session", "", "new"),
+        new("Session", "Duplicate session", "", "duplicate"),
+        new("Session", "Start the session", "", "start"),
+        new("Session", "Open folder", "", "open"),
+        new("Session", "Edit the session", "", "edit"),
+        new("Session", "Rename the session", "", "rename"),
+        new("Session", "Templates", "", "templates"),
+        new("Session", "Close the session", "", "close"),
+        new("Layout", "List, tab, or preview", "", "focus"),
+        new("Layout", "Next panel", "", "next"),
+        new("Layout", "Previous panel", "", "previous"),
+        new("Layout", "Hide or show Sessions", "", "hide"),
+        new("Layout", "Maximize or restore", "", "maximize"),
+        new("Layout", "Terminal or Files", "", "tab"),
+        new("Layout", "Open or close the preview", "", "preview"),
+        new("Files", "Open selected file", "", "open-file"),
+        new("Files", "Refresh Files", "", "refresh"),
+        new("Clipboard", "Copy selection or screen", AppKeys.CopyText, "copy"),
+        new("Clipboard", "Paste", AppKeys.PasteText, "paste"),
+        new("App", "Theme", "", "theme"),
+        new("App", "About", "", "about"),
+        new("App", "Quit", "", "quit"),
+    ]);
 
     private static readonly int NameColumn = EntriesMax(static entry => entry.Title.Length);
 
@@ -57,11 +58,37 @@ internal static class CommandPalette
                 || entry.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
                 || entry.Detail.Contains(text, StringComparison.OrdinalIgnoreCase)));
 
+    /// <summary>Rows as shown: a null entry is a group heading, followed by that group's matches.</summary>
+    internal static List<Entry?> Rows(IEnumerable<Entry> matches)
+    {
+        var rows = new List<Entry?>();
+        string? group = null;
+        foreach (Entry entry in matches)
+        {
+            if (entry.Group != group)
+            {
+                group = entry.Group;
+                rows.Add(null);
+            }
+
+            rows.Add(entry);
+        }
+
+        return rows;
+    }
+
+    private static Entry[] Sort(Entry[] entries) =>
+        entries
+            .OrderBy(entry => Array.IndexOf(Groups, entry.Group))
+            .ThenBy(entry => entry.Title, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
     internal static string? Ask(IApplication app, bool filesActive)
     {
         var shown = new ObservableCollection<string>();
-        List<Entry> matches = [];
+        List<Entry?> rows = [];
         var filling = false;
+        var last = 1;
         var dialog = new Dialog
         {
             Title = "Commands",
@@ -98,11 +125,19 @@ internal static class CommandPalette
 
             filling = true;
             string text = query.Text?.ToString()?.Trim() ?? "";
-            matches = Matches(text, filesActive).ToList();
+            List<Entry> found = Matches(text, filesActive).ToList();
+            rows = Rows(found);
             int width = Math.Max(list.Viewport.Width, NameColumn + ShortcutColumn + 2);
             shown.Clear();
-            foreach (Entry entry in matches)
+            for (int i = 0; i < rows.Count; i++)
             {
+                if (rows[i] is not Entry entry)
+                {
+                    string group = rows[i + 1]!.Value.Group;
+                    shown.Add("\u2500\u2500 " + group + " " + new string('\u2500', Math.Max(0, width - group.Length - 4)));
+                    continue;
+                }
+
                 int gap = width - entry.Title.Length - entry.Detail.Length;
                 if (gap < 2)
                 {
@@ -112,12 +147,13 @@ internal static class CommandPalette
                 shown.Add(entry.Title + new string(' ', gap) + entry.Detail);
             }
 
-            bool keep = list.SelectedItem is int selected && selected >= 0 && selected < matches.Count;
-            if (matches.Count > 0 && !keep)
+            bool keep = list.SelectedItem is int selected && selected >= 0 && selected < rows.Count && rows[selected] is not null;
+            if (found.Count > 0 && !keep)
             {
-                list.SelectedItem = 0;
+                list.SelectedItem = 1;
             }
 
+            last = list.SelectedItem ?? 1;
             filling = false;
         }
 
@@ -125,12 +161,12 @@ internal static class CommandPalette
         void Accept()
         {
             int index = list.SelectedItem is int selected ? selected : 0;
-            if (index < 0 || index >= matches.Count)
+            if (index < 0 || index >= rows.Count || rows[index] is not Entry entry)
             {
                 return;
             }
 
-            chosen = matches[index].Id;
+            chosen = entry.Id;
             app.RequestStop(dialog);
         }
 
@@ -157,13 +193,39 @@ internal static class CommandPalette
                 return;
             }
 
-            if (key == Key.CursorDown && matches.Count > 0)
+            if (key == Key.CursorDown && rows.Count > 0)
             {
                 list.SetFocus();
                 key.Handled = true;
             }
         };
         list.Activate = Accept;
+        list.IsHeading = row => row >= 0 && row < rows.Count && rows[row] is null;
+        // Headings are not commands. Selection steps over them in the direction it was moving.
+        list.ValueChanged += (_, _) =>
+        {
+            if (filling || list.SelectedItem is not int row)
+            {
+                return;
+            }
+
+            if (row >= 0 && row < rows.Count && rows[row] is null)
+            {
+                int step = row < last ? -1 : 1;
+                int next = row + step;
+                if (next < 0 || next >= rows.Count)
+                {
+                    next = row - step;
+                }
+
+                filling = true;
+                list.SelectedItem = next;
+                filling = false;
+                row = next;
+            }
+
+            last = row;
+        };
         dialog.KeyDown += (_, key) =>
         {
             if (key != Key.Enter)
@@ -200,10 +262,12 @@ internal static class CommandPalette
         return width;
     }
 
-    /// <summary>Enter and a click both run the highlighted command. The list would otherwise swallow them.</summary>
+    /// <summary>Enter and a click both run the highlighted command. The list would otherwise swallow them. Headings ignore clicks.</summary>
     private sealed class PaletteList : ListView
     {
         internal Action? Activate { get; set; }
+
+        internal Func<int, bool>? IsHeading { get; set; }
 
         protected override bool OnKeyDown(Key key)
         {
@@ -218,6 +282,11 @@ internal static class CommandPalette
 
         protected override bool OnMouseEvent(Mouse mouse)
         {
+            if (mouse.Position is { } position && IsHeading?.Invoke(Viewport.Y + (int)position.Y) == true)
+            {
+                return true;
+            }
+
             bool handled = base.OnMouseEvent(mouse);
             if (mouse.Flags.HasFlag(MouseFlags.LeftButtonClicked))
             {

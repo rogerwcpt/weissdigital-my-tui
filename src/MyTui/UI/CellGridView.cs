@@ -35,11 +35,10 @@ internal sealed class CellGridView : View
     private int _gridWidth = -1;
     private int _gridHeight = -1;
 
-    internal CellGridView(Func<Key, bool, bool> chords, Action start, Action close, Action<string> copyText, Action<string> openLink)
+    internal CellGridView(Func<Key, bool, bool> chords, Action start, Action<string> copyText, Action<string> openLink)
     {
         _chords = chords;
         _start = start;
-        _close = close;
         _copyText = copyText;
         _openLink = openLink;
         CanFocus = true;
@@ -56,8 +55,6 @@ internal sealed class CellGridView : View
     private Func<Key, bool, bool> _chords { get; }
 
     private Action _start { get; }
-
-    private Action _close { get; }
 
     private Action<string> _copyText { get; }
 
@@ -180,12 +177,6 @@ internal sealed class CellGridView : View
         if (idle && key == Key.Enter)
         {
             _start();
-            return true;
-        }
-
-        if (idle && SessionScreen.IsCloseKey(key))
-        {
-            _close();
             return true;
         }
 
