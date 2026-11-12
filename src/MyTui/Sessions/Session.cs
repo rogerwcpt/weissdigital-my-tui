@@ -153,10 +153,15 @@ internal sealed class Session
         StartError = null;
     }
 
-    internal void Stop()
+    internal void Stop(bool force = false)
     {
         TerminalSession? process = Terminal;
         Terminal = null;
+        if (force)
+        {
+            process?.Kill();
+        }
+
         process?.Dispose();
     }
 

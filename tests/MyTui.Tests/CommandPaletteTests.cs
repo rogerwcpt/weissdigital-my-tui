@@ -25,6 +25,23 @@ public class CommandPaletteTests
         Assert.Equal("Duplicate session", entry.Title);
     }
 
+    [Theory]
+    [InlineData("Toggle Preview Panel", "preview")]
+    [InlineData("Toggle Sessions Panel", "hide")]
+    [InlineData("Maximize/Restore", "maximize")]
+    [InlineData("Toggle Center Panel", "center")]
+    [InlineData("Restore layout", "restore")]
+    [InlineData("Show Terminal", "terminal")]
+    [InlineData("Show Files", "files")]
+    [InlineData("sort sessions by name", "sort")]
+    [InlineData("force stop terminal", "stop")]
+    [InlineData("reveal", "reveal")]
+    public void WorkspaceCommandsAreSearchableInEitherTab(string query, string id)
+    {
+        Assert.Equal(id, Assert.Single(CommandPalette.Matches(query, filesActive: false)).Id);
+        Assert.Equal(id, Assert.Single(CommandPalette.Matches(query, filesActive: true)).Id);
+    }
+
     [Fact]
     public void FilteringStillMatchesTitlesAndShortcuts()
     {
@@ -49,14 +66,29 @@ public class CommandPaletteTests
     }
 
     [Fact]
+    public void LayoutContainsOnlyTheExplicitPanelCommands()
+    {
+        List<string> titles = CommandPalette.Matches("", filesActive: true)
+            .Where(entry => entry.Group == "Layout")
+            .Select(entry => entry.Title)
+            .ToList();
+
+        Assert.Equal(
+            ["Maximize/Restore", "Restore layout", "Show Files", "Show Terminal",
+             "Toggle Center Panel", "Toggle Preview Panel", "Toggle Sessions Panel"],
+            titles);
+    }
+
+    [Fact]
     public void RowsPutAHeadingBeforeEachGroup()
     {
         List<CommandPalette.Entry?> rows = CommandPalette.Rows(CommandPalette.Matches("pa", filesActive: false));
         Assert.Null(rows[0]);
-        Assert.Equal("next", rows[1]!.Value.Id);
-        Assert.Equal("previous", rows[2]!.Value.Id);
-        Assert.Null(rows[3]);
-        Assert.Equal("paste", rows[4]!.Value.Id);
-        Assert.Equal(5, rows.Count);
+        Assert.Equal("center", rows[1]!.Value.Id);
+        Assert.Equal("preview", rows[2]!.Value.Id);
+        Assert.Equal("hide", rows[3]!.Value.Id);
+        Assert.Null(rows[4]);
+        Assert.Equal("paste", rows[5]!.Value.Id);
+        Assert.Equal(6, rows.Count);
     }
 }

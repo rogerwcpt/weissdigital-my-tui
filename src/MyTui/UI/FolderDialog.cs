@@ -58,6 +58,14 @@ internal static class FolderDialog
     internal static string? Ask(IApplication app, string? start)
     {
         var dialog = Create(start);
+        dialog.KeyDown += (_, key) =>
+        {
+            if (key == Key.Esc)
+            {
+                app.RequestStop(dialog);
+                key.Handled = true;
+            }
+        };
         try
         {
             app.Run(dialog);

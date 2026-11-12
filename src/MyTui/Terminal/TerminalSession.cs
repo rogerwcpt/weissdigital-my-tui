@@ -95,6 +95,8 @@ internal sealed class TerminalSession : IDisposable
 
     internal void Write(ReadOnlySpan<byte> data) => _pty?.Write(data);
 
+    internal void Kill() => _pty?.Kill();
+
     internal bool BracketedPaste
     {
         get

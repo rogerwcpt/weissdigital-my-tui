@@ -47,19 +47,23 @@ Host terminals and agent CLIs swallow most key chords, so my-tui has no per-comm
 | Session | Close the session | Close the selected session, asking first if it is running. |
 | Session | Duplicate session | Start a fresh copy of the selected session. |
 | Session | Edit the session | Edit the selected session's settings. |
+| Session | Force stop terminal | Forcefully terminate the selected terminal after confirmation, keeping the session so it can be restarted. |
 | Session | New session | Create a session. The command defaults to `$SHELL` and can be edited before starting. |
 | Session | Open folder | Choose a folder and start a new shell session there. |
 | Session | Rename the session | Change the selected session's name. |
+| Session | Sort Sessions by Name | Sort sessions alphabetically, keeping the selected session and saving the order. |
 | Session | Start the session | Start a stopped session. Enter in the session list does the same. |
 | Session | Templates | Apply a saved template in the new-session dialog. |
-| Layout | Hide or show Sessions | Toggle the session list. |
-| Layout | List, tab, or preview | Move focus between the session list, the open tab, and the preview. |
-| Layout | Maximize or restore | Maximize the focused panel or restore the layout. |
-| Layout | Next / previous panel | Move focus between visible panels. |
-| Layout | Open or close the preview | Toggle the preview panel on the right; it stays open while you use the terminal. |
-| Layout | Terminal or Files | Switch between the Terminal and Files tabs. |
+| Layout | Maximize/Restore | Maximize the focused panel or undo its maximization. |
+| Layout | Restore layout | Return to the default layout: Sessions and the center panel visible, Preview closed, and Sessions at its default width. |
+| Layout | Show Files | Show and focus the Files tab; restore the default layout first if Sessions or Preview is maximized. |
+| Layout | Show Terminal | Show and focus the Terminal tab; restore the default layout first if Sessions or Preview is maximized. |
+| Layout | Toggle Center Panel | Hide or show the session's center area containing Terminal and Files. |
+| Layout | Toggle Preview Panel | Toggle the preview panel on the right; it stays open while you use the terminal. |
+| Layout | Toggle Sessions Panel | Toggle the session list. |
 | Files | Open selected file | Open the selected file in its system-default application while Files is active. |
 | Files | Refresh Files | Refresh the file tree. |
+| Files | Reveal in Finder / Reveal in File Manager | Reveal the selected file or folder in Files, or open the session folder when Terminal is active. |
 | Clipboard | Copy selection or screen (Ctrl+Shift+C) | Copy selected text from the focused preview or terminal; with no selection, copy the preview contents or visible terminal screen. |
 | Clipboard | Paste (Ctrl+Shift+V) | Paste clipboard text into the terminal. |
 | App | About | Show application information. |
@@ -68,15 +72,21 @@ Host terminals and agent CLIs swallow most key chords, so my-tui has no per-comm
 
 Drag in a preview to select text; releasing copies it, as in the terminal. Double-click selects a word and triple-click a line in plain-text previews. In plain-text previews, Ctrl+A selects all and Shift+Left/Right extends the selection. Previews are read-only: Ctrl+Shift+V pastes into the session's terminal, not the file.
 
-Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, until you quit my-tui. Both panels keep a minimum width, and the terminal resizes to fit.
+Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, until you restore the default layout or quit my-tui. Both panels keep a minimum width, and the terminal resizes to fit.
 
-Alt+Up and Alt+Down reorder sessions in the list. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program.
+Alt+Up and Alt+Down reorder sessions in the list. **Sort Sessions by Name** sorts the list case-insensitively on demand; manual reordering still works afterward. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program.
+
+Ctrl+C is passed to the running program to interrupt it. Child terminals start with default, unblocked signals rather than inheriting the host's ignored interrupts. If a program still will not exit, choose **Force stop terminal** from F9; this kills the shell and foreground job, discards their terminal output, and keeps the saved session. Unsaved work may be lost. Press Enter or choose **Start the session** to restart it.
+
+Escape cancels the **Open Folder** dialog without creating a session.
 
 A session you are not viewing shows ● after new output and ! after a bell. Sessions are restored from `~/.config/my-tui/state.json` but are not started automatically; select one and press Enter. Templates are stored in `~/.config/my-tui/templates.json`.
 
 Open the command palette with F9 and choose **Duplicate session** to immediately start a fresh terminal using the selected session’s folder, command, arguments, and environment. The copy is named `<original>-2`, then `-3`, and so on, skipping names already in use. The original session keeps running unchanged.
 
 While Files is active, open the command palette with F9 and choose **Open selected file** to launch the selected file in its system-default application (`open` on macOS, `xdg-open` on Linux). Select a file rather than a folder.
+
+**Reveal in Finder** selects the Files tab's selected item in macOS Finder. On Linux, **Reveal in File Manager** uses `xdg-open` to open a selected directory or a file's containing directory; selecting the file itself is not portable. With Terminal active, Reveal opens the session's folder instead.
 
 ## Configuration
 

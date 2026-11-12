@@ -76,6 +76,85 @@ public class SessionStateTests
     }
 
     [Fact]
+    public void SortByName_PersistsAStableCaseInsensitiveOrderAndKeepsTheFocusedSession()
+    {
+        string directory = Directory.CreateTempSubdirectory("my-tui-sort").FullName;
+        string path = Path.Combine(directory, "state.json");
+        try
+        {
+            var manager = SessionManager.Load(path);
+            Session beta = manager.Create("Beta", directory, "/bin/sh", []);
+            Session alpha = manager.Create("alpha", directory, "/bin/sh", []);
+            Session upperAlpha = manager.Create("ALPHA", directory, "/bin/sh", []);
+            Session gamma = manager.Create("gamma", directory, "/bin/sh", []);
+            manager.Focus(0);
+            manager.SetTab(beta, SessionTab.Files);
+
+            manager.SortByName();
+
+            Assert.Equal([alpha, upperAlpha, beta, gamma], manager.Sessions);
+            Assert.Same(beta, manager.Focused);
+            Assert.Equal(2, manager.FocusedIndex);
+            Assert.Equal(SessionTab.Files, beta.Tab);
+            var restored = SessionManager.Load(path);
+            Assert.Equal(manager.Sessions.Select(session => session.Id), restored.Sessions.Select(session => session.Id));
+            Assert.Equal(beta.Id, restored.Focused!.Id);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SortByName_HandlesAnEmptyList()
+    {
+        string directory = Directory.CreateTempSubdirectory("my-tui-sort-empty").FullName;
+        try
+        {
+            var manager = SessionManager.Load(Path.Combine(directory, "state.json"));
+            manager.SortByName();
+            Assert.Empty(manager.Sessions);
+            Assert.Null(manager.Focused);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [UnixFact(Timeout = 15000)]
+    public async Task ForceStop_KeepsTheSavedSessionAndAllowsRestarting()
+    {
+        string directory = Directory.CreateTempSubdirectory("my-tui-stop").FullName;
+        string path = Path.Combine(directory, "state.json");
+        var manager = SessionManager.Load(path);
+        Session session = manager.Create("shell", directory, "/bin/sh", []);
+        try
+        {
+            session.Start(80, 24);
+            int pid = session.Terminal!.Pid;
+
+            session.Stop(force: true);
+
+            Assert.False(MyTui.Terminal.PtySession.IsRunning(pid));
+            Assert.Null(session.Terminal);
+            Assert.Same(session, Assert.Single(manager.Sessions));
+            Assert.Equal(session.Id, SessionManager.Load(path).Focused!.Id);
+            session.Start(80, 24);
+            Assert.True(session.IsRunning);
+            Assert.NotEqual(pid, session.Terminal!.Pid);
+        }
+        finally
+        {
+            session.Stop();
+            Directory.Delete(directory, recursive: true);
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [Fact]
     public void CorruptFile_IsParkedAndLoadStartsEmpty()
     {
         string directory = Directory.CreateTempSubdirectory("my-tui-bad").FullName;

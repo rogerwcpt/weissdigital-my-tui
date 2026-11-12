@@ -99,7 +99,7 @@ internal sealed class PtySession : IDisposable
             actions.Dup(0, 1);
             actions.Dup(0, 2);
             using var attributes = new SpawnAttributes();
-            attributes.SetSid();
+            attributes.PrepareChild();
             using var args = new NativeStringList(argv);
             using var envp = new NativeStringList(FormatEnvironment(environment));
             int spawned = PtyNative.Spawn(out int pid, file, actions.Handle, attributes.Handle, args.Pointer, envp.Pointer);
@@ -261,6 +261,26 @@ internal sealed class PtySession : IDisposable
         }
 
         return Marshal.GetLastPInvokeError() != PtyNative.Esrch;
+    }
+
+    internal void Kill()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            // Interactive shells put the foreground job in a separate process group.
+            int foreground = PtyNative.ForegroundGroup(_master);
+            if (foreground > 1 && foreground != _pid)
+            {
+                _ = PtyNative.Kill(-foreground, PtyNative.SigKill);
+            }
+
+            Signal(PtyNative.SigKill);
+        }
     }
 
     public void Dispose()
@@ -583,8 +603,19 @@ internal sealed class PtySession : IDisposable
 
         internal IntPtr Handle => _storage;
 
-        internal void SetSid() =>
-            ThrowIf(PtyNative.SpawnAttrSetFlags(Handle, PtyNative.SpawnSetSid), "posix_spawnattr_setflags");
+        internal void PrepareChild()
+        {
+            // Host signal handling must not make Ctrl+C ineffective in child terminals.
+            var signals = new PtyNative.UnixSignalSet();
+            ThrowIf(PtyNative.FillSignalSet(ref signals), "sigfillset");
+            ThrowIf(PtyNative.SpawnAttrSetSigDefault(Handle, ref signals), "posix_spawnattr_setsigdefault");
+            ThrowIf(PtyNative.EmptySignalSet(ref signals), "sigemptyset");
+            ThrowIf(PtyNative.SpawnAttrSetSigMask(Handle, ref signals), "posix_spawnattr_setsigmask");
+            ThrowIf(PtyNative.SpawnAttrSetFlags(
+                Handle,
+                (short)(PtyNative.SpawnSetSid | PtyNative.SpawnSetSigDefault | PtyNative.SpawnSetSigMask)),
+                "posix_spawnattr_setflags");
+        }
 
         public void Dispose()
         {

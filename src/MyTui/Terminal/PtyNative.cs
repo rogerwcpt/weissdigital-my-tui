@@ -13,6 +13,8 @@ internal static partial class PtyNative
     internal const int Esrch = 3;
     internal const int SigTerm = 15;
     internal const int SigKill = 9;
+    internal const short SpawnSetSigDefault = 0x04;
+    internal const short SpawnSetSigMask = 0x08;
     internal const int WaitNoHang = 1;
     internal const short PollIn = 1;
 
@@ -96,6 +98,18 @@ internal static partial class PtyNative
     [LibraryImport("libc", EntryPoint = "posix_spawnattr_setflags")]
     internal static partial int SpawnAttrSetFlags(IntPtr attributes, short flags);
 
+    [LibraryImport("libc", EntryPoint = "posix_spawnattr_setsigdefault")]
+    internal static partial int SpawnAttrSetSigDefault(IntPtr attributes, ref UnixSignalSet signals);
+
+    [LibraryImport("libc", EntryPoint = "posix_spawnattr_setsigmask")]
+    internal static partial int SpawnAttrSetSigMask(IntPtr attributes, ref UnixSignalSet signals);
+
+    [LibraryImport("libc", EntryPoint = "sigfillset")]
+    internal static partial int FillSignalSet(ref UnixSignalSet signals);
+
+    [LibraryImport("libc", EntryPoint = "sigemptyset")]
+    internal static partial int EmptySignalSet(ref UnixSignalSet signals);
+
     [LibraryImport("libc", EntryPoint = "posix_spawnattr_destroy")]
     internal static partial int SpawnAttrDestroy(IntPtr attributes);
 
@@ -169,8 +183,17 @@ internal static partial class PtyNative
     [LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
     internal static partial int Kill(int pid, int signal);
 
+    [LibraryImport("libc", EntryPoint = "tcgetpgrp", SetLastError = true)]
+    internal static partial int ForegroundGroup(int fd);
+
     [LibraryImport("libc", EntryPoint = "waitpid", SetLastError = true)]
     internal static partial int WaitPid(int pid, out int status, int options);
+
+    // sigset_t is 4 bytes on macOS and 128 bytes on glibc Linux.
+    [StructLayout(LayoutKind.Sequential, Size = 128)]
+    internal struct UnixSignalSet
+    {
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct UnixWinsize

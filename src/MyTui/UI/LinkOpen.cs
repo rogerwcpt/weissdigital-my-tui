@@ -25,7 +25,17 @@ internal static class LinkOpen
         return TryLaunch(Path.GetFullPath(path));
     }
 
-    internal static ProcessStartInfo? StartInfo(string target)
+    internal static bool TryReveal(string path, bool select)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            return false;
+        }
+
+        return TryLaunch(Path.GetFullPath(path), select);
+    }
+
+    internal static ProcessStartInfo? StartInfo(string target, bool reveal = false)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -33,20 +43,36 @@ internal static class LinkOpen
         }
 
         string? program = OperatingSystem.IsMacOS() ? "open" : OperatingSystem.IsLinux() ? "xdg-open" : null;
-        return program is null ? null : new ProcessStartInfo
+        if (program is null)
+        {
+            return null;
+        }
+
+        var info = new ProcessStartInfo
         {
             FileName = program,
-            ArgumentList = { target },
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        if (reveal && OperatingSystem.IsMacOS())
+        {
+            info.ArgumentList.Add("-R");
+        }
+        else if (reveal && OperatingSystem.IsLinux() && !Directory.Exists(target))
+        {
+            // xdg-open has no portable "select item" option.
+            target = Path.GetDirectoryName(target)!;
+        }
+
+        info.ArgumentList.Add(target);
+        return info;
     }
 
-    private static bool TryLaunch(string target)
+    private static bool TryLaunch(string target, bool reveal = false)
     {
         try
         {
-            ProcessStartInfo? info = StartInfo(target);
+            ProcessStartInfo? info = StartInfo(target, reveal);
             if (info is null)
             {
                 return false;

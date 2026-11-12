@@ -300,14 +300,14 @@ internal sealed class SessionScreen : IDisposable
 
     internal FrameView Content { get; }
 
-    internal void Start()
+    internal void Start(string? statePath = null)
     {
         if (_timeout is not null)
         {
             return;
         }
 
-        _manager = SessionManager.Load(StateStore.DefaultPath());
+        _manager = SessionManager.Load(statePath ?? StateStore.DefaultPath());
         RefreshLabels();
         if (_manager.Sessions.Count > 0)
         {
@@ -622,21 +622,47 @@ internal sealed class SessionScreen : IDisposable
         RefreshLabels();
     }
 
-    internal void ToggleFocus()
+    private void SortSessions()
     {
-        if (_list.HasFocus)
+        if (_modal || _manager is null)
         {
-            FocusPane();
             return;
         }
 
-        if (_previewOpen && !PreviewHasFocus())
+        _manager.SortByName();
+        RefreshLabels();
+    }
+
+    private void ForceStopTerminal()
+    {
+        if (_modal || _manager?.Focused is not Session session || !session.IsRunning)
         {
-            FocusPreview();
             return;
         }
 
-        _list.SetFocus();
+        HoldModal();
+        bool stop;
+        try
+        {
+            stop = CloseDialog.ConfirmStop(_app, session.Name);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (!stop)
+        {
+            return;
+        }
+
+        _grid.Session = null;
+        session.Stop(force: true);
+        Forget(session);
+        SyncLabel(_manager.FocusedIndex);
+        UpdateStatus();
+        _grid.Repaint();
+        Note("Terminal stopped. Enter starts it again.");
     }
 
     internal void RefreshFiles()
@@ -837,6 +863,11 @@ internal sealed class SessionScreen : IDisposable
             ReleaseModal();
         }
 
+        ExecuteCommand(id);
+    }
+
+    internal void ExecuteCommand(string? id)
+    {
         switch (id)
         {
             case "new":
@@ -854,23 +885,32 @@ internal sealed class SessionScreen : IDisposable
             case "open-file":
                 OpenSelectedFile();
                 break;
-            case "focus":
-                ToggleFocus();
+            case "reveal":
+                RevealInFileManager();
                 break;
-            case "next":
-                CyclePanels(forward: true);
+            case "sort":
+                SortSessions();
                 break;
-            case "previous":
-                CyclePanels(forward: false);
+            case "stop":
+                ForceStopTerminal();
+                break;
+            case "center":
+                ToggleContent();
+                break;
+            case "restore":
+                RestoreLayout();
+                break;
+            case "terminal":
+                ShowTab(SessionTab.Terminal);
+                break;
+            case "files":
+                ShowTab(SessionTab.Files);
                 break;
             case "hide":
                 ToggleSessions();
                 break;
             case "maximize":
                 ToggleMaximize(PanelUnderFocus());
-                break;
-            case "tab":
-                CycleTab();
                 break;
             case "preview":
                 TogglePreview();
@@ -1050,6 +1090,24 @@ internal sealed class SessionScreen : IDisposable
         Note("Opened " + selected.Name);
     }
 
+    private void RevealInFileManager()
+    {
+        if (_modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        FileNode? selected = FilesActive ? _tree.SelectedObject : null;
+        string path = selected?.Path ?? session.Cwd;
+        if (!Workspace.IsInside(session.Cwd, path) || !LinkOpen.TryReveal(path, select: selected is not null))
+        {
+            Note("Could not reveal the path");
+            return;
+        }
+
+        Note("Revealed " + (selected?.Name ?? session.Name));
+    }
+
     private void OpenLink(string url)
     {
         if (LinkOpen.TryOpen(url))
@@ -1150,33 +1208,6 @@ internal sealed class SessionScreen : IDisposable
 
         SyncLabel(_manager.FocusedIndex);
         UpdateStatus();
-        ResizeActive();
-    }
-
-    private void CycleTab()
-    {
-        if (_manager?.Focused is not Session session)
-        {
-            return;
-        }
-
-        if (_maximized is MaximizedPanel.Sessions or MaximizedPanel.Preview)
-        {
-            _maximized = MaximizedPanel.None;
-        }
-
-        _contentHidden = false;
-        SessionTab next = session.Tab == SessionTab.Files ? SessionTab.Terminal : SessionTab.Files;
-        _manager.SetTab(session, next);
-        ApplyLayout();
-        SelectTab(next);
-        _grid.Live = next == SessionTab.Terminal;
-        if (next == SessionTab.Files)
-        {
-            RefreshFiles();
-        }
-
-        FocusPane();
         ResizeActive();
     }
 
@@ -1298,75 +1329,51 @@ internal sealed class SessionScreen : IDisposable
         ResizeActive();
     }
 
-    private void CyclePanels(bool forward)
+    private void RestoreLayout()
     {
-        PanelStop[] order = [PanelStop.Sessions, PanelStop.Terminal, PanelStop.Files];
-        int index = Array.IndexOf(order, CurrentStop());
-        if (index < 0)
+        _sessionsHidden = false;
+        _contentHidden = false;
+        _previewOpen = false;
+        _maximized = MaximizedPanel.None;
+        _sessionsWidth = SessionSplitter.DefaultWidth;
+        // Hiding Preview can transfer focus into Files and select its first row.
+        // Do not let that implicit selection reopen the panel we just closed.
+        bool updating = _updating;
+        _updating = true;
+        try
         {
-            index = 0;
+            ApplyLayout();
+            FocusPane();
         }
-
-        int next = (index + (forward ? 1 : order.Length - 1)) % order.Length;
-        FocusStop(order[next]);
+        finally
+        {
+            _updating = updating;
+        }
     }
 
-    private PanelStop CurrentStop()
+    private void ToggleContent()
     {
-        if (_list.HasFocus)
+        WorkspaceLayout layout = WorkspaceLayout.Compute(_sessionsHidden, _contentHidden, _previewOpen, _maximized);
+        if (layout.TabsVisible)
         {
-            return PanelStop.Sessions;
+            MinimizeContent();
+            return;
         }
 
-        if (_tree.HasFocus || _files.HasFocus)
-        {
-            return PanelStop.Files;
-        }
-
-        if (_grid.HasFocus || _terminal.HasFocus)
-        {
-            return PanelStop.Terminal;
-        }
-
-        if (PreviewHasFocus() || _manager?.Focused?.Tab == SessionTab.Files)
-        {
-            return _manager?.Focused?.Tab == SessionTab.Files ? PanelStop.Files : PanelStop.Terminal;
-        }
-
-        return PanelStop.Terminal;
-    }
-
-    private void FocusStop(PanelStop stop)
-    {
-        switch (stop)
-        {
-            case PanelStop.Sessions:
-                _sessionsHidden = false;
-                if (_maximized is MaximizedPanel.Content or MaximizedPanel.Preview)
-                {
-                    _maximized = MaximizedPanel.None;
-                }
-
-                ApplyLayout();
-                _list.SetFocus();
-                break;
-            case PanelStop.Terminal:
-                ShowTab(SessionTab.Terminal);
-                break;
-            case PanelStop.Files:
-                ShowTab(SessionTab.Files);
-                break;
-        }
+        _contentHidden = false;
+        _maximized = MaximizedPanel.None;
+        ApplyLayout();
+        FocusPane();
     }
 
     private void ShowTab(SessionTab tab)
     {
-        _contentHidden = false;
         if (_maximized is MaximizedPanel.Sessions or MaximizedPanel.Preview)
         {
-            _maximized = MaximizedPanel.None;
+            RestoreLayout();
         }
 
+        _contentHidden = false;
         ApplyLayout();
         if (_manager?.Focused is Session session)
         {
@@ -1379,7 +1386,18 @@ internal sealed class SessionScreen : IDisposable
         }
 
         SelectTab(tab);
-        FocusPane();
+        // Focusing Files may select its first row. That is not a user request to
+        // open Preview, especially just after restoring the default layout.
+        _updating = true;
+        try
+        {
+            FocusPane();
+        }
+        finally
+        {
+            _updating = false;
+        }
+
         ResizeActive();
     }
 
@@ -1575,13 +1593,6 @@ internal sealed class SessionScreen : IDisposable
         }
 
         ResizeActive();
-    }
-
-    private enum PanelStop
-    {
-        Sessions,
-        Terminal,
-        Files,
     }
 
     private bool PreviewHasFocus() =>

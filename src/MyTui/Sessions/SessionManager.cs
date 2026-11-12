@@ -118,6 +118,21 @@ internal sealed class SessionManager
         return true;
     }
 
+    internal void SortByName()
+    {
+        if (_sessions.Count < 2)
+        {
+            return;
+        }
+
+        Session focused = Focused!;
+        Session[] sorted = _sessions.OrderBy(session => session.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        _sessions.Clear();
+        _sessions.AddRange(sorted);
+        _focused = _sessions.IndexOf(focused);
+        Save();
+    }
+
     internal void Update(Session session, string name, string cwd, string command, IReadOnlyList<string> args)
     {
         session.Name = name.Trim();

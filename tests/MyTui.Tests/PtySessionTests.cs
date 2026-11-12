@@ -1,10 +1,88 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using MyTui.Terminal;
 
 namespace MyTui.Tests;
 
+[Collection("PTY signals")]
 public class PtySessionTests
 {
+    [UnixFact(Timeout = 15000)]
+    public async Task CtrlC_InterruptsTheChildEvenWhenTheHostIgnoresSigint()
+    {
+        PtySession? session = null;
+        nint previous = SetSignal(2, 1);
+        Assert.NotEqual((nint)(-1), previous);
+        try
+        {
+            try
+            {
+                session = PtySession.Start(
+                    "/bin/sh",
+                    ["/bin/sh", "-c", "trap 'exit 42' INT; printf 'READY\\n'; while :; do sleep 1; done"],
+                    80, 24, CleanEnv());
+            }
+            finally
+            {
+                SetSignal(2, previous);
+            }
+
+            Capture(session, value => value.Contains("READY"), TimeSpan.FromSeconds(3));
+            session.Write([0x03]);
+            Assert.True(WaitUntil(session.PollExited, TimeSpan.FromSeconds(3)));
+            Assert.Equal(42, session.ExitCode);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [DllImport("libc", EntryPoint = "signal")]
+    private static extern nint SetSignal(int signal, nint handler);
+
+    [UnixFact(Timeout = 15000)]
+    public async Task Kill_StopsTheForegroundJobOfAnInteractiveShell()
+    {
+        string directory = Directory.CreateTempSubdirectory("my-tui-kill").FullName;
+        string pidFile = Path.Combine(directory, "child-pid");
+        PtySession? session = null;
+        int child = 0;
+        try
+        {
+            session = PtySession.Start("/bin/sh", ["/bin/sh", "-i"], 80, 24, CleanEnv());
+            session.StartReading();
+            session.Write(Encoding.UTF8.GetBytes(
+                $"/bin/sh -c 'trap \"\" TERM; echo $$ > \"$1\"; exec cat' sh '{pidFile}'\n"));
+            Assert.True(WaitUntil(
+                () => File.Exists(pidFile) && File.ReadAllText(pidFile).Trim().Length > 0,
+                TimeSpan.FromSeconds(3)));
+            child = int.Parse(File.ReadAllText(pidFile).Trim());
+            Assert.True(PtySession.IsRunning(child));
+            int shell = session.Pid;
+
+            session.Kill();
+            session.Dispose();
+
+            Assert.False(PtySession.IsRunning(shell));
+            Assert.True(WaitUntil(() => !PtySession.IsRunning(child), TimeSpan.FromSeconds(3)));
+        }
+        finally
+        {
+            if (child > 1 && PtySession.IsRunning(child))
+            {
+                PtyNative.Kill(child, PtyNative.SigKill);
+            }
+
+            session?.Dispose();
+            Directory.Delete(directory, recursive: true);
+        }
+
+        await Task.CompletedTask;
+    }
+
     [UnixFact(Timeout = 15000)]
     public async Task EchoesTypedBytes()
     {
@@ -160,4 +238,9 @@ public class PtySessionTests
             }
         }
     }
+}
+
+[CollectionDefinition("PTY signals", DisableParallelization = true)]
+public class PtySignalCollection
+{
 }
