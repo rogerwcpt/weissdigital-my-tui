@@ -75,6 +75,7 @@ internal sealed class SessionManager
         }
 
         session.Stop();
+        session.StopScript();
         _sessions.RemoveAt(index);
         if (_sessions.Count == 0)
         {

@@ -36,21 +36,31 @@ The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar
 dotnet run --project src/MyTui
 ```
 
-F9 opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running.
+F9 opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running.
 
 ### Commands
 
-Host terminals and agent CLIs swallow most key chords, so my-tui has no per-command shortcuts. F9 is the one key it keeps, plus Ctrl+Shift+C and Ctrl+Shift+V for copy and paste when your host terminal passes them through.
+Host terminals and agent CLIs swallow most key chords, so most commands are in the palette only. my-tui keeps these Norton Commander-style keys, plus Ctrl+Shift+C and Ctrl+Shift+V for copy and paste when your host terminal passes them through:
+
+| Key | Sessions panel focused | Files panel focused | Terminal or Preview focused |
+| --- | --- | --- | --- |
+| F3 | Toggle Preview | Toggle Preview | Toggle Preview |
+| F6 | Rename the selected session | Rename the selected file or folder | Leave the key to the focused view/program |
+| F8 | Remove the selected session | Delete the selected file or folder, after confirmation | Leave the key to the focused view/program |
+| F9 | Command Palette | Command Palette | Command Palette |
+| F10 | Quit my-tui | Quit my-tui | Quit my-tui |
+
+F6 and F8 follow keyboard focus, not just the selected tab. Removing a session does not delete its files; running sessions or scripts prompt before being stopped. File deletion is permanent (not Trash), and deleting a folder includes its contents. Its confirmation defaults to **Cancel**; Escape also cancels. Renaming does not overwrite existing files or folders.
 
 | Group | Command | What it does |
 | --- | --- | --- |
-| Session | Close the session | Close the selected session, asking first if it is running. |
+| Session | Close the session (F8 in Sessions) | Close the selected session, asking first if it is running. |
 | Session | Duplicate session | Start a fresh copy of the selected session. |
 | Session | Edit the session | Edit the selected session's settings. |
 | Session | Force stop terminal | Forcefully terminate the selected terminal after confirmation, keeping the session so it can be restarted. |
 | Session | New session | Create a session. The command defaults to `$SHELL` and can be edited before starting. |
 | Session | Open folder | Choose a folder and start a new shell session there. |
-| Session | Rename the session | Change the selected session's name. |
+| Session | Rename the session (F6 in Sessions) | Change the selected session's name. |
 | Session | Sort Sessions by Name | Sort sessions alphabetically, keeping the selected session and saving the order. |
 | Session | Start the session | Start a stopped session. Enter in the session list does the same. |
 | Session | Templates | Apply a saved template in the new-session dialog. |
@@ -59,15 +69,20 @@ Host terminals and agent CLIs swallow most key chords, so my-tui has no per-comm
 | Layout | Show Files | Show and focus the Files tab; restore the default layout first if Sessions or Preview is maximized. |
 | Layout | Show Terminal | Show and focus the Terminal tab; restore the default layout first if Sessions or Preview is maximized. |
 | Layout | Toggle Center Panel | Hide or show the session's center area containing Terminal and Files. |
-| Layout | Toggle Preview Panel | Toggle the preview panel on the right; it stays open while you use the terminal. |
+| Layout | Toggle Preview Panel (F3) | Toggle the preview panel on the right; it stays open while you use the terminal. |
 | Layout | Toggle Sessions Panel | Toggle the session list. |
+| Files | Delete selected file or folder (F8 in Files) | Permanently delete the selected item after confirmation. Folders include all contents. |
+| Files | Rename selected file or folder (F6 in Files) | Rename the selected item in place without overwriting an existing item. |
 | Files | Open selected file | Open the selected file in its system-default application while Files is active. |
 | Files | Refresh Files | Refresh the file tree. |
 | Files | Reveal in Finder / Reveal in File Manager | Reveal the selected file or folder in Files, or open the session folder when Terminal is active. |
+| Files | Run selected script | Run the highlighted `.sh` file while Files is active; stream its output to Preview. |
+| Files | Show script output | Reopen the current session's latest script output, even after browsing other files. |
+| Files | Stop script | Stop the current session's running script and its child processes, keeping the output. |
 | Clipboard | Copy selection or screen (Ctrl+Shift+C) | Copy selected text from the focused preview or terminal; with no selection, copy the preview contents or visible terminal screen. |
 | Clipboard | Paste (Ctrl+Shift+V) | Paste clipboard text into the terminal. |
 | App | About | Show application information. |
-| App | Quit | Quit my-tui, asking first if any session is running. |
+| App | Quit (F10) | Quit my-tui, asking first if any terminal session or script is running. |
 | App | Theme | Choose and save the UI theme. |
 
 Drag in a preview to select text; releasing copies it, as in the terminal. Double-click selects a word and triple-click a line in plain-text previews. In plain-text previews, Ctrl+A selects all and Shift+Left/Right extends the selection. Previews are read-only: Ctrl+Shift+V pastes into the session's terminal, not the file.
@@ -85,6 +100,10 @@ A session you are not viewing shows ● after new output and ! after a bell. Ses
 Open the command palette with F9 and choose **Duplicate session** to immediately start a fresh terminal using the selected session’s folder, command, arguments, and environment. The copy is named `<original>-2`, then `-3`, and so on, skipping names already in use. The original session keeps running unchanged.
 
 While Files is active, open the command palette with F9 and choose **Open selected file** to launch the selected file in its system-default application (`open` on macOS, `xdg-open` on Linux). Select a file rather than a folder.
+
+To run a shell script, highlight a `.sh` file in **Files**, then choose **Run selected script** from F9. Highlighting alone never executes it. Preview opens with live stdout/stderr and the final exit code; the session's terminal is left alone. The script runs from the session's working directory with its environment overrides, using its shebang interpreter (or `/bin/sh` without a shebang). Executable permission is not required. Only run scripts you trust: they have your normal user permissions.
+
+One script can run per session. **Stop script** stops it and its child processes; you can then run it again. Selecting another file returns Preview to file contents; **Show script output** returns to the latest run. Output follows the bottom unless you scroll up or select text, and is capped at 256K characters while the script continues running. Output is plain text, and stdin is closed: use Terminal for interactive scripts. Closing the session or quitting also stops its script. Script output is not saved across app launches.
 
 **Reveal in Finder** selects the Files tab's selected item in macOS Finder. On Linux, **Reveal in File Manager** uses `xdg-open` to open a selected directory or a file's containing directory; selecting the file itself is not portable. With Terminal active, Reveal opens the session's folder instead.
 

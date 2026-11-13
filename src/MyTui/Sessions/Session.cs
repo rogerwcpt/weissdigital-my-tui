@@ -33,6 +33,10 @@ internal sealed class Session
 
     internal string? SelectedPath { get; set; }
 
+    internal ScriptRun? Script { get; private set; }
+
+    internal bool ShowingScriptOutput { get; set; }
+
     internal string? StartError { get; set; }
 
     internal bool IsRunning => Terminal is { } process && !process.HasExited && process.IsRunning;
@@ -152,6 +156,21 @@ internal sealed class Session
             Cwd);
         StartError = null;
     }
+
+    internal void RunScript(string path)
+    {
+        if (Script?.IsRunning == true)
+        {
+            throw new InvalidOperationException("A script is already running. Stop it before running another.");
+        }
+
+        ScriptRun run = ScriptRun.Start(Cwd, path, Env);
+        Script?.Dispose();
+        Script = run;
+        ShowingScriptOutput = true;
+    }
+
+    internal void StopScript() => Script?.Stop();
 
     internal void Stop(bool force = false)
     {

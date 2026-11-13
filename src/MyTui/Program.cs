@@ -4,7 +4,7 @@ using Terminal.Gui.Input;
 using Terminal.Gui.Views;
 
 // Terminal.Gui needs a quit key, and its default is Esc. SessionScreen swallows this one so
-// quitting goes through the F9 palette.
+// quitting goes through F10 or the F9 palette, with confirmation for running sessions.
 Application.SetDefaultKeyBinding(Command.Quit, Bind.All(Key.Q.WithCtrl));
 // The library default is 25. A key waits one iteration to reach the PTY and the echo waits
 // for the next, so 40 ms iterations read as typing lag. SessionScreen lowers this to

@@ -15,7 +15,7 @@ internal static class CommandPalette
 {
     internal const string Shortcut = "F9";
 
-    internal const string Footer = "Palette  F9";
+    internal const string Footer = "Palette  F9   Quit  " + AppKeys.QuitText;
 
     internal readonly record struct Entry(string Group, string Title, string Detail, string Id);
 
@@ -28,26 +28,31 @@ internal static class CommandPalette
         new("Session", "Start the session", "", "start"),
         new("Session", "Open folder", "", "open"),
         new("Session", "Edit the session", "", "edit"),
-        new("Session", "Rename the session", "", "rename"),
+        new("Session", "Rename the session", AppKeys.RenameText, "rename"),
         new("Session", "Sort Sessions by Name", "", "sort"),
         new("Session", "Force stop terminal", "", "stop"),
         new("Session", "Templates", "", "templates"),
-        new("Session", "Close the session", "", "close"),
+        new("Session", "Close the session", AppKeys.DeleteText, "close"),
         new("Layout", "Toggle Sessions Panel", "", "hide"),
         new("Layout", "Maximize/Restore", "", "maximize"),
-        new("Layout", "Toggle Preview Panel", "", "preview"),
+        new("Layout", "Toggle Preview Panel", AppKeys.PreviewText, "preview"),
         new("Layout", "Toggle Center Panel", "", "center"),
         new("Layout", "Restore layout", "", "restore"),
         new("Layout", "Show Terminal", "", "terminal"),
         new("Layout", "Show Files", "", "files"),
         new("Files", "Open selected file", "", "open-file"),
+        new("Files", "Rename selected file or folder", AppKeys.RenameText, "rename-file"),
+        new("Files", "Delete selected file or folder", AppKeys.DeleteText, "delete-file"),
         new("Files", OperatingSystem.IsMacOS() ? "Reveal in Finder" : "Reveal in File Manager", "", "reveal"),
         new("Files", "Refresh Files", "", "refresh"),
+        new("Files", "Run selected script", "", "run-script"),
+        new("Files", "Show script output", "", "script-output"),
+        new("Files", "Stop script", "", "stop-script"),
         new("Clipboard", "Copy selection or screen", AppKeys.CopyText, "copy"),
         new("Clipboard", "Paste", AppKeys.PasteText, "paste"),
         new("App", "Theme", "", "theme"),
         new("App", "About", "", "about"),
-        new("App", "Quit", "", "quit"),
+        new("App", "Quit", AppKeys.QuitText, "quit"),
     ]);
 
     private static readonly int NameColumn = EntriesMax(static entry => entry.Title.Length);
@@ -56,7 +61,7 @@ internal static class CommandPalette
 
     internal static IEnumerable<Entry> Matches(string text, bool filesActive) =>
         Entries.Where(entry =>
-            (filesActive || entry.Id != "open-file")
+            (filesActive || entry.Id is not ("open-file" or "run-script" or "rename-file" or "delete-file"))
             && (text.Length == 0
                 || entry.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
                 || entry.Detail.Contains(text, StringComparison.OrdinalIgnoreCase)));

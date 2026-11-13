@@ -60,17 +60,32 @@ internal sealed class PreviewTextView : View
     internal string Content
     {
         get => _content;
-        set
-        {
-            string normalized = value.Replace("\r\n", "\n").Replace('\r', '\n');
-            _content = normalized;
-            _lines = normalized.Length == 0 ? [""] : normalized.Split('\n');
-            _lineStarts = new int[_lines.Length];
-            for (int i = 1; i < _lines.Length; i++)
-            {
-                _lineStarts[i] = _lineStarts[i - 1] + _lines[i - 1].Length + 1;
-            }
+        set => SetContent(value, reset: true, follow: false);
+    }
 
+    /// <summary>Follow live output only at the bottom, preserving a reader's scroll and selection.</summary>
+    internal void UpdateOutput(string value, bool reset = false) => SetContent(value, reset, follow: true);
+
+    private void SetContent(string value, bool reset, bool follow)
+    {
+        string normalized = value.Replace("\r\n", "\n").Replace('\r', '\n');
+        if (!reset && normalized == _content)
+        {
+            return;
+        }
+
+        var previous = Viewport;
+        bool atBottom = reset || previous.Y + previous.Height >= _lines.Length;
+        _content = normalized;
+        _lines = normalized.Length == 0 ? [""] : normalized.Split('\n');
+        _lineStarts = new int[_lines.Length];
+        for (int i = 1; i < _lines.Length; i++)
+        {
+            _lineStarts[i] = _lineStarts[i - 1] + _lines[i - 1].Length + 1;
+        }
+
+        if (reset)
+        {
             if (_dragging)
             {
                 App?.Mouse.UngrabMouse();
@@ -78,21 +93,30 @@ internal sealed class PreviewTextView : View
 
             _dragging = false;
             _anchor = _caret = 0;
-            int width = 1;
-            foreach (string line in _lines)
-            {
-                width = Math.Max(width, VisualWidth(line));
-            }
-
-            SetContentSize(new System.Drawing.Size(width, _lines.Length));
-            if (Viewport.X != 0 || Viewport.Y != 0)
-            {
-                Viewport = Viewport with { X = 0, Y = 0 };
-            }
-
-            SetNeedsDraw();
-            SyncHorizontalBar();
         }
+        else
+        {
+            _anchor = Math.Min(_anchor, _content.Length);
+            _caret = Math.Min(_caret, _content.Length);
+        }
+
+        int width = 1;
+        foreach (string line in _lines)
+        {
+            width = Math.Max(width, VisualWidth(line));
+        }
+
+        SetContentSize(new System.Drawing.Size(width, _lines.Length));
+        int bottom = Math.Max(0, _lines.Length - Viewport.Height);
+        bool track = follow && atBottom && !_dragging && _anchor == _caret;
+        Viewport = Viewport with
+        {
+            X = reset ? 0 : Math.Clamp(previous.X, 0, Math.Max(0, width - Viewport.Width)),
+            Y = track ? bottom : reset ? 0 : Math.Clamp(previous.Y, 0, bottom),
+        };
+
+        SetNeedsDraw();
+        SyncHorizontalBar();
     }
 
     protected override void OnViewportChanged(DrawEventArgs args)

@@ -132,6 +132,31 @@ public class PreviewTextViewTests
     }
 
     [Fact]
+    public void LiveOutputFollowsTheBottomButPreservesScrollAndSelection()
+    {
+        using var view = new PreviewTextView();
+        view.Layout(new System.Drawing.Size(30, 10));
+        string first = string.Join('\n', Enumerable.Range(1, 40).Select(n => $"line {n:000}"));
+        view.UpdateOutput(first, reset: true);
+        Assert.Equal(30, view.Viewport.Y);
+        view.UpdateOutput(first + "\nline 041");
+        Assert.Equal(31, view.Viewport.Y);
+
+        view.NewKeyDownEvent(Key.Home);
+        Assert.Equal(0, view.Viewport.Y);
+        Send(view, 0, 0, MouseFlags.LeftButtonPressed);
+        Send(view, 4, 0, MouseFlags.LeftButtonReleased);
+        Assert.Equal("line", view.SelectedText);
+        view.UpdateOutput(first + "\nline 041\nline 042");
+        Assert.Equal(0, view.Viewport.Y);
+        Assert.Equal("line", view.SelectedText);
+
+        view.Content = "another file";
+        Assert.Equal(0, view.Viewport.Y);
+        Assert.Empty(view.SelectedText);
+    }
+
+    [Fact]
     public void ShortSourceHidesTheScrollbar()
     {
         var view = new PreviewTextView();

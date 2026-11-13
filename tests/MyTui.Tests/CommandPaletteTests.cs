@@ -14,6 +14,18 @@ public class CommandPaletteTests
         Assert.DoesNotContain(CommandPalette.Matches(query, filesActive: false), entry => entry.Id == "open-file");
     }
 
+    [Fact]
+    public void RunScriptIsFilesOnlyButOutputAndStopAreAvailableFromEitherTab()
+    {
+        Assert.Equal("run-script", Assert.Single(CommandPalette.Matches("run selected script", filesActive: true)).Id);
+        Assert.Empty(CommandPalette.Matches("run selected script", filesActive: false));
+        foreach (bool filesActive in new[] { false, true })
+        {
+            Assert.Equal("script-output", Assert.Single(CommandPalette.Matches("show script output", filesActive)).Id);
+            Assert.Equal("stop-script", Assert.Single(CommandPalette.Matches("stop script", filesActive)).Id);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -45,9 +57,38 @@ public class CommandPaletteTests
     [Fact]
     public void FilteringStillMatchesTitlesAndShortcuts()
     {
-        Assert.Equal("open-file", Assert.Single(CommandPalette.Matches("SELECTED FILE", filesActive: true)).Id);
+        Assert.Equal("open-file", Assert.Single(CommandPalette.Matches("OPEN SELECTED FILE", filesActive: true)).Id);
         Assert.Equal("copy", Assert.Single(CommandPalette.Matches("ctrl+shift+c", filesActive: false)).Id);
         Assert.Contains(CommandPalette.Matches("open", filesActive: false), entry => entry.Id == "open");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void QuitAdvertisesF10InEitherTab(bool filesActive)
+    {
+        CommandPalette.Entry entry = Assert.Single(CommandPalette.Matches("F10", filesActive));
+        Assert.Equal("quit", entry.Id);
+        Assert.Equal("F10", entry.Detail);
+        Assert.Contains("F10", CommandPalette.Footer);
+    }
+
+    [Theory]
+    [InlineData("rename-file", "F6")]
+    [InlineData("delete-file", "F8")]
+    public void FileMutationsAreFilesOnlyAndShowTheirKeys(string id, string shortcut)
+    {
+        Assert.DoesNotContain(CommandPalette.Matches("", filesActive: false), entry => entry.Id == id);
+        Assert.Equal(shortcut, Assert.Single(CommandPalette.Matches("", filesActive: true), entry => entry.Id == id).Detail);
+    }
+
+    [Theory]
+    [InlineData("preview", "F3")]
+    [InlineData("rename", "F6")]
+    [InlineData("close", "F8")]
+    public void ExistingActionsShowTheirCommanderKeys(string id, string shortcut)
+    {
+        Assert.Equal(shortcut, Assert.Single(CommandPalette.Matches("", filesActive: false), entry => entry.Id == id).Detail);
     }
 
     [Fact]
@@ -62,7 +103,9 @@ public class CommandPaletteTests
             Assert.Equal(titles.Order(StringComparer.OrdinalIgnoreCase), titles);
         }
 
-        Assert.All(entries.Where(entry => entry.Group != "Clipboard"), entry => Assert.Empty(entry.Detail));
+        Assert.All(entries.Where(entry => entry.Group != "Clipboard"
+                && entry.Id is not ("quit" or "preview" or "rename" or "close" or "rename-file" or "delete-file")),
+            entry => Assert.Empty(entry.Detail));
     }
 
     [Fact]

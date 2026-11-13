@@ -57,6 +57,8 @@ internal sealed class SessionScreen : IDisposable
     private Window? _window;
     private string _statusNote = "";
     private long _statusUntil;
+    private ScriptRun? _shownScript;
+    private int _scriptVersion;
 
     /// <summary>Selected session row, with a close mark in the last column.</summary>
     internal static string ActiveRow(string label, int width)
@@ -145,6 +147,11 @@ internal sealed class SessionScreen : IDisposable
 
             string? previous = session.SelectedPath;
             session.SelectedPath = args.NewValue?.Path;
+            if (!string.Equals(previous, session.SelectedPath, StringComparison.Ordinal))
+            {
+                session.ShowingScriptOutput = false;
+            }
+
             if (args.NewValue is { Directory: false }
                 && !string.Equals(previous, session.SelectedPath, StringComparison.Ordinal))
             {
@@ -288,7 +295,7 @@ internal sealed class SessionScreen : IDisposable
         window.ClearingViewport += (_, _) => _grid.Repaint();
         window.KeyDown += (_, key) =>
         {
-            // Terminal.Gui's quit key would stop the app without asking. Quit is in the palette.
+            // Terminal.Gui's quit key would stop the app without asking. Use F10 or the palette.
             if (!key.Handled && key == Key.Q.WithCtrl && !key.IsAlt && !key.IsShift)
             {
                 key.Handled = true;
@@ -329,7 +336,7 @@ internal sealed class SessionScreen : IDisposable
 
     internal bool HandleChord(Key key, bool inTerminal)
     {
-        if (!AppKeys.TryRoute(key, out AppCommand command))
+        if (_modal || !AppKeys.TryRoute(key, out AppCommand command))
         {
             return false;
         }
@@ -338,6 +345,48 @@ internal sealed class SessionScreen : IDisposable
         {
             case AppCommand.Menu:
                 ShowPalette();
+                break;
+            case AppCommand.Preview:
+                TogglePreview();
+                break;
+            case AppCommand.Rename:
+            case AppCommand.Delete:
+                // Do not steal these keys from terminal programs or act on a panel behind Preview.
+                if (inTerminal)
+                {
+                    return false;
+                }
+
+                if (_list.HasFocus)
+                {
+                    if (command == AppCommand.Rename)
+                    {
+                        RenameSession();
+                    }
+                    else
+                    {
+                        CloseSelected();
+                    }
+                }
+                else if (FilesActive && _files.HasFocus)
+                {
+                    if (command == AppCommand.Rename)
+                    {
+                        RenameSelectedFile();
+                    }
+                    else
+                    {
+                        DeleteSelectedFile();
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+
+                break;
+            case AppCommand.Quit:
+                RequestQuit();
                 break;
             case AppCommand.Copy:
                 CopyVisible();
@@ -358,7 +407,7 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        int running = _manager.Sessions.Count(session => session.IsRunning);
+        int running = _manager.Sessions.Count(session => session.IsRunning || session.Script?.IsRunning == true);
         if (running > 0)
         {
             HoldModal();
@@ -583,7 +632,7 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        if (session.IsRunning && !ConfirmClose(session.Name))
+        if ((session.IsRunning || session.Script?.IsRunning == true) && !ConfirmClose(session.Name))
         {
             return;
         }
@@ -687,15 +736,40 @@ internal sealed class SessionScreen : IDisposable
         _updating = false;
         if (keep is not null)
         {
-            FileNode? match = Workspace.Children(_root, _root)
-                .FirstOrDefault(node => string.Equals(node.Path, keep, StringComparison.Ordinal));
-            if (match is not null)
-            {
-                _tree.GoTo(match);
-            }
+            RestoreFileSelection(keep);
         }
 
         ShowPreview(session);
+    }
+
+    private void RestoreFileSelection(string path)
+    {
+        if (!Workspace.IsInside(_root, path))
+        {
+            return;
+        }
+
+        string directory = _root;
+        string[] parts = Path.GetRelativePath(_root, path).Split(Path.DirectorySeparatorChar);
+        for (int i = 0; i < parts.Length; i++)
+        {
+            FileNode? node = Workspace.Children(_root, directory)
+                .FirstOrDefault(child => child.Name == parts[i]);
+            if (node is null)
+            {
+                return;
+            }
+
+            if (i == parts.Length - 1)
+            {
+                _tree.GoTo(node);
+            }
+            else
+            {
+                _tree.Expand(node);
+                directory = node.Path;
+            }
+        }
     }
 
     public void Dispose()
@@ -721,6 +795,7 @@ internal sealed class SessionScreen : IDisposable
         foreach (Session session in _manager.Sessions)
         {
             session.Stop();
+            session.StopScript();
         }
     }
 
@@ -884,6 +959,21 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case "open-file":
                 OpenSelectedFile();
+                break;
+            case "rename-file":
+                RenameSelectedFile();
+                break;
+            case "delete-file":
+                DeleteSelectedFile();
+                break;
+            case "run-script":
+                RunSelectedScript();
+                break;
+            case "script-output":
+                ShowScriptOutput();
+                break;
+            case "stop-script":
+                StopScript();
                 break;
             case "reveal":
                 RevealInFileManager();
@@ -1088,6 +1178,147 @@ internal sealed class SessionScreen : IDisposable
         }
 
         Note("Opened " + selected.Name);
+    }
+
+    private void RenameSelectedFile()
+    {
+        if (!FilesActive || _modal || _manager?.Focused is not Session session
+            || _tree.SelectedObject is not FileNode selected)
+        {
+            return;
+        }
+
+        HoldModal();
+        string? name;
+        try
+        {
+            name = SessionDialog.AskName(_app, selected.Name,
+                selected.Directory ? "Rename folder" : "Rename file", WorkspaceFiles.NameProblem);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (name is null)
+        {
+            return;
+        }
+
+        try
+        {
+            session.SelectedPath = WorkspaceFiles.Rename(session.Cwd, selected.Path, name);
+            session.ShowingScriptOutput = false;
+            RefreshFiles();
+            FocusPane();
+            Note("Renamed to " + name);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Note("Could not rename: " + ex.Message);
+        }
+    }
+
+    private void DeleteSelectedFile()
+    {
+        if (!FilesActive || _modal || _manager?.Focused is not Session session
+            || _tree.SelectedObject is not FileNode selected)
+        {
+            return;
+        }
+
+        HoldModal();
+        bool delete;
+        try
+        {
+            delete = CloseDialog.ConfirmDelete(_app, selected.Name, selected.Directory);
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (!delete)
+        {
+            return;
+        }
+
+        try
+        {
+            WorkspaceFiles.Delete(session.Cwd, selected.Path);
+            session.SelectedPath = null;
+            session.ShowingScriptOutput = false;
+            RefreshFiles();
+            FocusPane();
+            Note("Deleted " + selected.Name);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Note("Could not delete: " + ex.Message);
+        }
+    }
+
+    private void RunSelectedScript()
+    {
+        if (!FilesActive || _modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        if (_tree.SelectedObject is not { Directory: false } selected
+            || !selected.Path.EndsWith(".sh", StringComparison.OrdinalIgnoreCase))
+        {
+            Note("Select a .sh file to run");
+            return;
+        }
+
+        try
+        {
+            session.RunScript(selected.Path);
+            ShowScriptOutput();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+            or PlatformNotSupportedException or System.ComponentModel.Win32Exception)
+        {
+            Note("Could not run script: " + ex.Message);
+        }
+    }
+
+    private void ShowScriptOutput()
+    {
+        if (_modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        if (session.Script is null)
+        {
+            Note("No script output yet. Select a .sh file and choose Run selected script.");
+            return;
+        }
+
+        session.ShowingScriptOutput = true;
+        _previewOpen = true;
+        _contentHidden = false;
+        if (_maximized is MaximizedPanel.Content or MaximizedPanel.Sessions)
+        {
+            _maximized = MaximizedPanel.None;
+        }
+
+        ApplyLayout();
+        ShowPreview(session);
+        FocusPreview();
+    }
+
+    private void StopScript()
+    {
+        if (_modal || _manager?.Focused is not Session session || session.Script?.IsRunning != true)
+        {
+            return;
+        }
+
+        session.StopScript();
+        ShowScriptOutput();
     }
 
     private void RevealInFileManager()
@@ -1641,6 +1872,14 @@ internal sealed class SessionScreen : IDisposable
 
     private void ShowPreview(Session? session)
     {
+        _shownScript = null;
+        if (session?.ShowingScriptOutput == true && session.Script is { } script)
+        {
+            _shownScript = script;
+            UpdateScriptPreview(script, reset: true);
+            return;
+        }
+
         if (session is null)
         {
             _preview.Title = "Preview";
@@ -1659,6 +1898,22 @@ internal sealed class SessionScreen : IDisposable
         }
 
         ApplyPreview(PreviewText.Read(session.SelectedPath));
+    }
+
+    private void UpdateScriptPreview(ScriptRun script, bool reset = false)
+    {
+        if (!reset && _scriptVersion == script.Version)
+        {
+            return;
+        }
+
+        ScriptRun.Snapshot snapshot = script.Capture();
+        _scriptVersion = snapshot.Version;
+        _preview.Title = $"Output  {Path.GetFileName(script.Path)} · {snapshot.Status}";
+        _markdown.Visible = false;
+        _note.Visible = false;
+        _text.Visible = true;
+        _text.UpdateOutput(snapshot.Text, reset);
     }
 
     private void ApplyPreview(PreviewText.Content content)
@@ -1820,6 +2075,12 @@ internal sealed class SessionScreen : IDisposable
         for (int i = 0; i < _manager.Sessions.Count && i < _labels.Count; i++)
         {
             SyncLabel(i);
+        }
+
+        if (_manager.Focused is { ShowingScriptOutput: true, Script: { } script }
+            && ReferenceEquals(script, _shownScript) && _preview.Visible)
+        {
+            UpdateScriptPreview(script);
         }
 
         UpdateStatus();

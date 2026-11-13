@@ -6,14 +6,43 @@ namespace MyTui.Tests;
 public class AppKeysTests
 {
     [Fact]
-    public void OnlyF9AndClipboardChordsRun()
+    public void CommanderAndClipboardChordsRun()
     {
-        Assert.True(AppKeys.TryRoute(Key.F9, out AppCommand command));
+        Assert.True(AppKeys.TryRoute(Key.F3, out AppCommand command));
+        Assert.Equal(AppCommand.Preview, command);
+        Assert.True(AppKeys.TryRoute(Key.F6, out command));
+        Assert.Equal(AppCommand.Rename, command);
+        Assert.True(AppKeys.TryRoute(Key.F8, out command));
+        Assert.Equal(AppCommand.Delete, command);
+        Assert.True(AppKeys.TryRoute(Key.F9, out command));
         Assert.Equal(AppCommand.Menu, command);
+        Assert.True(AppKeys.TryRoute(Key.F10, out command));
+        Assert.Equal(AppCommand.Quit, command);
         Assert.True(AppKeys.TryRoute(Key.C.WithCtrl.WithShift, out command));
         Assert.Equal(AppCommand.Copy, command);
         Assert.True(AppKeys.TryRoute(Key.V.WithCtrl.WithShift, out command));
         Assert.Equal(AppCommand.Paste, command);
+    }
+
+    [Theory]
+    [MemberData(nameof(ModifiedFunctionKeys))]
+    public void ModifiedFunctionKeysGoToTheProgram(Key key) => Assert.False(AppKeys.TryRoute(key, out _));
+
+    public static TheoryData<Key> ModifiedFunctionKeys()
+    {
+        var keys = new TheoryData<Key>();
+        foreach (Key key in new[] { Key.F3, Key.F6, Key.F8, Key.F9, Key.F10 })
+        {
+            keys.Add(key.WithCtrl);
+            keys.Add(key.WithShift);
+            keys.Add(key.WithAlt);
+            keys.Add(key.WithCtrl.WithShift);
+            keys.Add(key.WithCtrl.WithAlt);
+            keys.Add(key.WithShift.WithAlt);
+            keys.Add(key.WithCtrl.WithShift.WithAlt);
+        }
+
+        return keys;
     }
 
     [Theory]
@@ -23,7 +52,7 @@ public class AppKeysTests
     public static TheoryData<Key> RemovedKeys() =>
     [
         Key.B.WithCtrl, Key.N.WithCtrl, Key.O.WithCtrl, Key.Q.WithCtrl, Key.Tab.WithCtrl,
-        Key.P.WithCtrl.WithShift, Key.F2, Key.F4, Key.F6, Key.F11, Key.Delete, Key.F9.WithCtrl,
+        Key.P.WithCtrl.WithShift, Key.F2, Key.F4, Key.F11, Key.Delete,
     ];
 }
 

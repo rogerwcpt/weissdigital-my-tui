@@ -101,11 +101,12 @@ internal static class SessionDialog
         }
     }
 
-    internal static string? AskName(IApplication app, string initial)
+    internal static string? AskName(
+        IApplication app, string initial, string title = "Rename session", Func<string, string?>? validate = null)
     {
         var dialog = new Dialog
         {
-            Title = "Rename session",
+            Title = title,
             Width = 52,
             Height = 7,
         };
@@ -122,12 +123,14 @@ internal static class SessionDialog
         dialog.Add(name.Label, name.Input, error);
         dialog.Accepting += (_, args) =>
         {
-            if (Read(name.Input).Length > 0)
+            string value = Read(name.Input);
+            string? problem = value.Length == 0 ? "Name is empty." : validate?.Invoke(value);
+            if (problem is null)
             {
                 return;
             }
 
-            error.Text = "Name is empty.";
+            error.Text = problem;
             args.Handled = true;
         };
         dialog.AddButton(new Button { Text = "Cancel" });

@@ -95,6 +95,44 @@ internal static class CloseDialog
         }
     }
 
+    internal static bool ConfirmDelete(IApplication app, string name, bool directory)
+    {
+        var dialog = new Dialog
+        {
+            Title = directory ? "Delete folder" : "Delete file",
+            Width = 62,
+            Height = 9,
+        };
+        dialog.Add(new Label
+        {
+            Text = "Permanently delete " + Fit(name) + "?\n"
+                + (directory ? "All contents will also be deleted.\n" : "")
+                + "This cannot be undone.",
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = 4,
+            CanFocus = false,
+        });
+        var cancel = new Button { Text = "Cancel" };
+        var delete = new Button { Text = "Delete" };
+        dialog.AddButton(cancel);
+        dialog.AddButton(delete);
+        delete.IsDefault = false;
+        cancel.IsDefault = true;
+        CancelOnEsc(dialog, app);
+        dialog.Initialized += (_, _) => cancel.SetFocus();
+        try
+        {
+            app.Run(dialog);
+            return dialog.Result == 1;
+        }
+        finally
+        {
+            dialog.Dispose();
+        }
+    }
+
     internal static void CancelOnEsc(Dialog dialog, IApplication app)
     {
         dialog.KeyDown += (_, key) =>
