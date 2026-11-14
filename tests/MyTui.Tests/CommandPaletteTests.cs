@@ -70,10 +70,13 @@ public class CommandPaletteTests
         CommandPalette.Entry entry = Assert.Single(CommandPalette.Matches("F10", filesActive));
         Assert.Equal("quit", entry.Id);
         Assert.Equal("F10", entry.Detail);
-        Assert.Contains("F10", CommandPalette.Footer);
+        Assert.Equal("Command Palette F9", CommandPalette.Footer);
+        Assert.DoesNotContain("Quit", CommandPalette.Footer);
+        Assert.DoesNotContain("F10", CommandPalette.Footer);
     }
 
     [Theory]
+    [InlineData("create-folder", "F7")]
     [InlineData("rename-file", "F6")]
     [InlineData("delete-file", "F8")]
     public void FileMutationsAreFilesOnlyAndShowTheirKeys(string id, string shortcut)
@@ -86,6 +89,8 @@ public class CommandPaletteTests
     [InlineData("preview", "F3")]
     [InlineData("rename", "F6")]
     [InlineData("close", "F8")]
+    [InlineData("center", "F12")]
+    [InlineData("hide", "F1")]
     public void ExistingActionsShowTheirCommanderKeys(string id, string shortcut)
     {
         Assert.Equal(shortcut, Assert.Single(CommandPalette.Matches("", filesActive: false), entry => entry.Id == id).Detail);
@@ -104,7 +109,8 @@ public class CommandPaletteTests
         }
 
         Assert.All(entries.Where(entry => entry.Group != "Clipboard"
-                && entry.Id is not ("quit" or "preview" or "rename" or "close" or "rename-file" or "delete-file")),
+                && entry.Id is not ("quit" or "preview" or "rename" or "close" or "center" or "hide"
+                    or "rename-file" or "delete-file" or "create-folder")),
             entry => Assert.Empty(entry.Detail));
     }
 

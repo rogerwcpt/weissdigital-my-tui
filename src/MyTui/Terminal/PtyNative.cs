@@ -186,6 +186,54 @@ internal static partial class PtyNative
     [LibraryImport("libc", EntryPoint = "tcgetpgrp", SetLastError = true)]
     internal static partial int ForegroundGroup(int fd);
 
+    [LibraryImport("libproc", EntryPoint = "proc_listchildpids")]
+    private static unsafe partial int ListChildPids(int pid, int* buffer, nuint bufferSize);
+
+    /// <summary>True when <paramref name="pid"/> has at least one child process.</summary>
+    internal static bool HasChild(int pid)
+    {
+        if (pid <= 1)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (OperatingSystem.IsMacOS())
+            {
+                unsafe
+                {
+                    int child = 0;
+                    return ListChildPids(pid, &child, (nuint)sizeof(int)) > 0;
+                }
+            }
+
+            if (OperatingSystem.IsLinux())
+            {
+                string path = "/proc/" + pid + "/task/" + pid + "/children";
+                if (!File.Exists(path))
+                {
+                    return false;
+                }
+
+                string text = File.ReadAllText(path);
+                foreach (char ch in text)
+                {
+                    if (ch is >= '0' and <= '9')
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
     [LibraryImport("libc", EntryPoint = "waitpid", SetLastError = true)]
     internal static partial int WaitPid(int pid, out int status, int options);
 

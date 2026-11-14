@@ -15,7 +15,7 @@ internal static class CommandPalette
 {
     internal const string Shortcut = "F9";
 
-    internal const string Footer = "Palette  F9   Quit  " + AppKeys.QuitText;
+    internal const string Footer = "Command Palette F9";
 
     internal readonly record struct Entry(string Group, string Title, string Detail, string Id);
 
@@ -33,14 +33,15 @@ internal static class CommandPalette
         new("Session", "Force stop terminal", "", "stop"),
         new("Session", "Templates", "", "templates"),
         new("Session", "Close the session", AppKeys.DeleteText, "close"),
-        new("Layout", "Toggle Sessions Panel", "", "hide"),
+        new("Layout", "Toggle Sessions Panel", AppKeys.SessionsText, "hide"),
         new("Layout", "Maximize/Restore", "", "maximize"),
         new("Layout", "Toggle Preview Panel", AppKeys.PreviewText, "preview"),
-        new("Layout", "Toggle Center Panel", "", "center"),
+        new("Layout", "Toggle Center Panel", AppKeys.CenterText, "center"),
         new("Layout", "Restore layout", "", "restore"),
         new("Layout", "Show Terminal", "", "terminal"),
         new("Layout", "Show Files", "", "files"),
         new("Files", "Open selected file", "", "open-file"),
+        new("Files", "Create folder", AppKeys.CreateFolderText, "create-folder"),
         new("Files", "Rename selected file or folder", AppKeys.RenameText, "rename-file"),
         new("Files", "Delete selected file or folder", AppKeys.DeleteText, "delete-file"),
         new("Files", OperatingSystem.IsMacOS() ? "Reveal in Finder" : "Reveal in File Manager", "", "reveal"),
@@ -61,7 +62,7 @@ internal static class CommandPalette
 
     internal static IEnumerable<Entry> Matches(string text, bool filesActive) =>
         Entries.Where(entry =>
-            (filesActive || entry.Id is not ("open-file" or "run-script" or "rename-file" or "delete-file"))
+            (filesActive || entry.Id is not ("open-file" or "run-script" or "rename-file" or "delete-file" or "create-folder"))
             && (text.Length == 0
                 || entry.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
                 || entry.Detail.Contains(text, StringComparison.OrdinalIgnoreCase)));

@@ -78,6 +78,32 @@ internal sealed class SessionScreen : IDisposable
         return string.Concat(runes) + new string(' ', spaces) + "\u00d7";
     }
 
+    /// <summary>Session list text, with a 1-based number in front of the name.</summary>
+    internal static string Numbered(string label, int index) =>
+        (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + "  " + label;
+
+    /// <summary>The session name after its list number, so type-ahead can match the name.</summary>
+    internal static string SearchText(string label)
+    {
+        int i = 0;
+        while (i < label.Length && label[i] is >= '0' and <= '9')
+        {
+            i++;
+        }
+
+        if (i == 0 || i >= label.Length || label[i] != ' ')
+        {
+            return label;
+        }
+
+        while (i < label.Length && label[i] == ' ')
+        {
+            i++;
+        }
+
+        return label[i..];
+    }
+
     internal static string ActivityLabel(string label, bool unseen, bool bell)
     {
         if (bell)
@@ -118,6 +144,15 @@ internal sealed class SessionScreen : IDisposable
     internal SessionScreen(IApplication app)
     {
         _app = app;
+        // Cmd+K is handled here, before a focused text field can treat it as the letter k.
+        _app.Keyboard.KeyDown += (_, key) => OnCommandChord(key);
+        _app.Keyboard.KeyUp += (_, key) =>
+        {
+            if (!key.Handled && AppKeys.IsCommandChord(key))
+            {
+                key.Handled = true;
+            }
+        };
         _grid = new CellGridView(HandleChord, StartFocused, CopyText, OpenLink);
         _hint = new Label
         {
@@ -242,6 +277,11 @@ internal sealed class SessionScreen : IDisposable
             Height = Dim.Fill(2),
         };
         _list.SetSource(_labels);
+        // The row starts with its session number. Search still matches the name after that number.
+        if (_list.KeystrokeNavigator is { } navigator)
+        {
+            navigator.Matcher = new SessionNameMatcher();
+        }
         _list.ValueChanged += (_, args) =>
         {
             if (_updating || args.NewValue is not int index)
@@ -284,7 +324,7 @@ internal sealed class SessionScreen : IDisposable
         BorderGlyph.Place(Sessions, '+', atEnd: true, NewSession, boxed: true);
         _contentCaption = PanelCaption.Attach(Content, () => ToggleMaximize(MaximizedPanel.Content), MinimizeContent);
         _previewCaption = PanelCaption.Attach(_preview, () => ToggleMaximize(MaximizedPanel.Preview), MinimizePreview);
-        _sessionSplitter = new SessionSplitter(Sessions, Content, ResizeSessions);
+        _sessionSplitter = new SessionSplitter(Sessions, Content, ResizeSessions, CommitSessionsWidth);
         ApplyLayout();
     }
 
@@ -315,6 +355,13 @@ internal sealed class SessionScreen : IDisposable
         }
 
         _manager = SessionManager.Load(statePath ?? StateStore.DefaultPath());
+        bool customWidth = false;
+        if (_manager.SessionsWidth is int width)
+        {
+            _sessionsWidth = width;
+            customWidth = true;
+        }
+
         RefreshLabels();
         if (_manager.Sessions.Count > 0)
         {
@@ -328,6 +375,11 @@ internal sealed class SessionScreen : IDisposable
         }
 
         _list.SetFocus();
+        if (customWidth)
+        {
+            ApplyLayout();
+        }
+
         _timeout = _app.AddTimeout(TimeSpan.FromMilliseconds(30), Tick);
         _app.Iteration += OnIteration;
     }
@@ -336,7 +388,19 @@ internal sealed class SessionScreen : IDisposable
 
     internal bool HandleChord(Key key, bool inTerminal)
     {
-        if (_modal || !AppKeys.TryRoute(key, out AppCommand command))
+        if (_modal)
+        {
+            return false;
+        }
+
+        if (AppKeys.TrySession(key, out int sessionIndex))
+        {
+            SwitchSession(sessionIndex);
+            UpdateStatus();
+            return true;
+        }
+
+        if (!AppKeys.TryRoute(key, out AppCommand command))
         {
             return false;
         }
@@ -346,8 +410,23 @@ internal sealed class SessionScreen : IDisposable
             case AppCommand.Menu:
                 ShowPalette();
                 break;
+            case AppCommand.Center:
+                ToggleContent();
+                break;
+            case AppCommand.Sessions:
+                ToggleSessions();
+                break;
             case AppCommand.Preview:
                 TogglePreview();
+                break;
+            case AppCommand.CreateFolder:
+                // F7 makes a folder only while Files has focus, as in Norton Commander.
+                if (inTerminal || !FilesActive || !_files.HasFocus)
+                {
+                    return false;
+                }
+
+                CreateSelectedFolder();
                 break;
             case AppCommand.Rename:
             case AppCommand.Delete:
@@ -410,11 +489,13 @@ internal sealed class SessionScreen : IDisposable
         int running = _manager.Sessions.Count(session => session.IsRunning || session.Script?.IsRunning == true);
         if (running > 0)
         {
+            string detail = CloseDialog.BusyQuitText(
+                _manager.Sessions.Where(session => session.IsBusy).Select(session => session.Name).ToList());
             HoldModal();
             bool quit;
             try
             {
-                quit = CloseDialog.ConfirmQuit(_app, running);
+                quit = CloseDialog.ConfirmQuit(_app, running, detail);
             }
             finally
             {
@@ -590,7 +671,7 @@ internal sealed class SessionScreen : IDisposable
             draft.Value.Command,
             CommandLine.Split(draft.Value.Args));
         session.StartError = null;
-        Content.Title = session.Name;
+        RefreshWindowTitle();
         RefreshFiles();
         SyncLabel(_manager.FocusedIndex);
         UpdateStatus();
@@ -620,7 +701,7 @@ internal sealed class SessionScreen : IDisposable
         }
 
         _manager.Rename(session, name);
-        Content.Title = session.Name;
+        RefreshWindowTitle();
         SyncLabel(_manager.FocusedIndex);
         UpdateStatus();
     }
@@ -650,7 +731,7 @@ internal sealed class SessionScreen : IDisposable
             _grid.Visible = false;
             _hint.Visible = true;
             _grid.Live = false;
-            Content.Title = "Session";
+            RefreshWindowTitle();
             ClearTree();
             ShowPreview(null);
             UpdateStatus();
@@ -919,6 +1000,20 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
+    private void OnCommandChord(Key key)
+    {
+        if (key.Handled || !AppKeys.IsCommandChord(key))
+        {
+            return;
+        }
+
+        key.Handled = true;
+        if (key.EventType == KeyEventType.Press)
+        {
+            ShowPalette();
+        }
+    }
+
     private void ShowPalette()
     {
         if (_modal)
@@ -962,6 +1057,9 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case "rename-file":
                 RenameSelectedFile();
+                break;
+            case "create-folder":
+                CreateSelectedFolder();
                 break;
             case "delete-file":
                 DeleteSelectedFile();
@@ -1178,6 +1276,74 @@ internal sealed class SessionScreen : IDisposable
         }
 
         Note("Opened " + selected.Name);
+    }
+
+    private void SwitchSession(int index)
+    {
+        if (_manager is null || index < 0 || index >= _manager.Sessions.Count)
+        {
+            Note("No session " + (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return;
+        }
+
+        bool listHadFocus = _list.HasFocus;
+        if (_list.SelectedItem != index)
+        {
+            _list.SelectedItem = index;
+        }
+
+        // The list keeps focus when the chord is pressed there. From a terminal or Files,
+        // land in that session's own pane, including when its tab is Files.
+        if (!listHadFocus)
+        {
+            FocusPane();
+        }
+    }
+
+    private void CreateSelectedFolder()
+    {
+        if (!FilesActive || _modal || _manager?.Focused is not Session session)
+        {
+            return;
+        }
+
+        string parent = session.Cwd;
+        if (_tree.SelectedObject is FileNode selected)
+        {
+            parent = selected.Directory
+                ? selected.Path
+                : Path.GetDirectoryName(selected.Path) ?? session.Cwd;
+        }
+
+        HoldModal();
+        string? name;
+        try
+        {
+            name = SessionDialog.AskName(
+                _app, "", "Create folder", WorkspaceFiles.NameProblem, "Create");
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (string.IsNullOrEmpty(name))
+        {
+            return;
+        }
+
+        try
+        {
+            session.SelectedPath = WorkspaceFiles.CreateDirectory(session.Cwd, parent, name);
+            session.ShowingScriptOutput = false;
+            RefreshFiles();
+            FocusPane();
+            Note("Created " + name);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Note("Could not create folder: " + ex.Message);
+        }
     }
 
     private void RenameSelectedFile()
@@ -1470,7 +1636,7 @@ internal sealed class SessionScreen : IDisposable
         _grid.Visible = true;
         _grid.Session = session.Terminal;
         _grid.Live = session.Tab == SessionTab.Terminal;
-        Content.Title = session.Name;
+        RefreshWindowTitle();
         SelectTab(session.Tab);
         RefreshFiles();
 
@@ -1567,6 +1733,7 @@ internal sealed class SessionScreen : IDisposable
         _previewOpen = false;
         _maximized = MaximizedPanel.None;
         _sessionsWidth = SessionSplitter.DefaultWidth;
+        _manager?.SetSessionsWidth(null);
         // Hiding Preview can transfer focus into Files and select its first row.
         // Do not let that implicit selection reopen the panel we just closed.
         bool updating = _updating;
@@ -1764,6 +1931,23 @@ internal sealed class SessionScreen : IDisposable
         _sessionsWidth = SessionSplitter.ClampWidth(width, Sessions.SuperView?.Viewport.Width ?? 80);
         ApplyLayout();
         _grid.Repaint();
+    }
+
+    private void CommitSessionsWidth()
+    {
+        if (_manager is null)
+        {
+            return;
+        }
+
+        try
+        {
+            int? width = _sessionsWidth == SessionSplitter.DefaultWidth ? null : _sessionsWidth;
+            _manager.SetSessionsWidth(width);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     private void ApplyLayout()
@@ -1975,7 +2159,7 @@ internal sealed class SessionScreen : IDisposable
 
     private string RowText(Session session, int index)
     {
-        string label = session.ListLabel;
+        string label = Numbered(session.ListLabel, index);
         if (_manager is null || index != _manager.FocusedIndex)
         {
             return ActivityLabel(label, _unseen.Contains(session), _rang.Contains(session));
@@ -1995,6 +2179,15 @@ internal sealed class SessionScreen : IDisposable
         if (_labels[index] != label)
         {
             _labels[index] = label;
+        }
+    }
+
+    private void RefreshWindowTitle()
+    {
+        string title = _manager?.Focused is Session session ? session.WindowTitle : "Session";
+        if (Content.Title != title)
+        {
+            Content.Title = title;
         }
     }
 
@@ -2076,6 +2269,8 @@ internal sealed class SessionScreen : IDisposable
         {
             SyncLabel(i);
         }
+
+        RefreshWindowTitle();
 
         if (_manager.Focused is { ShowingScriptOutput: true, Script: { } script }
             && ReferenceEquals(script, _shownScript) && _preview.Visible)
@@ -2220,6 +2415,23 @@ internal sealed class SessionScreen : IDisposable
                 return;
             }
         };
+    }
+
+    /// <summary>Matches a typed name, or the leading session number, against a numbered row.</summary>
+    private sealed class SessionNameMatcher : ICollectionNavigatorMatcher
+    {
+        public bool IsCompatibleKey(Key key)
+        {
+            Rune rune = key.AsRune;
+            return rune != default && !Rune.IsControl(rune) && !key.IsAlt && !key.IsCtrl;
+        }
+
+        public bool IsMatch(string search, object value)
+        {
+            string full = value?.ToString() ?? "";
+            return full.StartsWith(search, StringComparison.OrdinalIgnoreCase)
+                || SearchText(full).StartsWith(search, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private sealed class SessionList : ListView

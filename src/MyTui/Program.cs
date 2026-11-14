@@ -19,6 +19,7 @@ SessionScreen? screen = null;
 try
 {
     app.Init();
+    CommandChord.Install(app);
     HostTheme.Load();
     MyTui.Terminal.TerminalPalette.Load(HostTheme.ConfigPath());
     var window = new Window();

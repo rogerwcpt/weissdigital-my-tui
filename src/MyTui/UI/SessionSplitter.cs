@@ -15,15 +15,17 @@ internal sealed class SessionSplitter : IDisposable
     private readonly View _leftBorder;
     private readonly View _rightBorder;
     private readonly Action<int> _resize;
+    private readonly Action? _commit;
     private View? _dragBorder;
     private int _startColumn;
     private int _startWidth;
     private bool _active;
 
-    internal SessionSplitter(FrameView sessions, FrameView content, Action<int> resize)
+    internal SessionSplitter(FrameView sessions, FrameView content, Action<int> resize, Action? commit = null)
     {
         _sessions = sessions;
         _resize = resize;
+        _commit = commit;
         _leftBorder = sessions.Border.GetOrCreateView();
         _rightBorder = content.Border.GetOrCreateView();
         foreach (View border in new[] { _leftBorder, _rightBorder })
@@ -111,12 +113,17 @@ internal sealed class SessionSplitter : IDisposable
 
     private void EndDrag()
     {
+        bool dragged = _dragBorder is not null;
         if (_dragBorder?.App is { } app && app.Mouse.IsGrabbed(_dragBorder))
         {
             app.Mouse.UngrabMouse();
         }
 
         _dragBorder = null;
+        if (dragged)
+        {
+            _commit?.Invoke();
+        }
     }
 
     public void Dispose()

@@ -79,6 +79,31 @@ public class SessionSplitterTests
     }
 
     [Fact]
+    public void ReleaseAndCancelCommitTheDraggedWidthOnce()
+    {
+        using var sessions = new FrameView { Width = 28, Height = 20 };
+        using var content = new FrameView { Width = 50, Height = 20 };
+        sessions.Layout();
+        int commits = 0;
+        using var splitter = new SessionSplitter(sessions, content, _ => { }, () => commits++) { Active = true };
+        View border = sessions.Border.GetOrCreateView();
+        Point start = border.ViewportToScreen(new Point(27, 5));
+
+        Send(border, start, MouseFlags.LeftButtonPressed);
+        Send(border, start with { X = start.X + 8 }, MouseFlags.LeftButtonPressed | MouseFlags.PositionReport);
+        Assert.Equal(0, commits);
+        Send(border, start with { X = start.X + 8 }, MouseFlags.LeftButtonReleased);
+        Assert.Equal(1, commits);
+
+        splitter.Active = false;
+        Assert.Equal(1, commits);
+        splitter.Active = true;
+        Send(border, start, MouseFlags.LeftButtonPressed);
+        splitter.Active = false;
+        Assert.Equal(2, commits);
+    }
+
+    [Fact]
     public void DeactivatingCancelsAnInProgressDrag()
     {
         using var sessions = new FrameView { Width = 28, Height = 20 };

@@ -41,6 +41,14 @@ internal sealed class Session
 
     internal bool IsRunning => Terminal is { } process && !process.HasExited && process.IsRunning;
 
+    /// <summary>
+    /// A shell is busy while a command is in the foreground or it still has a child process.
+    /// Any other command is busy for as long as it is running.
+    /// </summary>
+    internal bool IsBusy => IsBusySession(Command, Args, IsRunning, Terminal?.IsBusy == true);
+
+    internal string WindowTitle => Name;
+
     internal string ListLabel
     {
         get
@@ -50,9 +58,55 @@ internal sealed class Session
                 return Name + " · stopped";
             }
 
-            return Terminal.HasExited ? Name + " · exited" : Name;
+            if (Terminal.HasExited)
+            {
+                return Name + " · exited";
+            }
+
+            return Name;
         }
     }
+
+    /// <summary>Shells wait at a prompt. Everything else is the command the session was started to run.</summary>
+    internal static bool IsBusySession(string command, IReadOnlyList<string> args, bool running, bool foregroundWork)
+    {
+        if (!running)
+        {
+            return false;
+        }
+
+        if (foregroundWork)
+        {
+            return true;
+        }
+
+        return !IsInteractiveShell(command, args);
+    }
+
+    private static bool IsInteractiveShell(string command, IReadOnlyList<string> args)
+    {
+        if (!IsShellName(Path.GetFileName(command)))
+        {
+            return false;
+        }
+
+        foreach (string arg in args)
+        {
+            if (arg is "-c" or "--command")
+            {
+                return false;
+            }
+
+            if (arg.Length > 1 && arg[0] == '-' && arg[1] != '-' && arg.Contains('c'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsShellName(string name) => name is "sh" or "bash" or "zsh" or "fish" or "dash" or "ksh" or "mksh" or "csh" or "tcsh";
 
     internal string StatusLine
     {

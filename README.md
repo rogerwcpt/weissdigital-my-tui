@@ -36,7 +36,7 @@ The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar
 dotnet run --project src/MyTui
 ```
 
-F9 opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running.
+F9 or Cmd+K opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. Cmd+K reaches my-tui only when the host terminal forwards it. Ghostty binds Cmd+K to clear the screen by default; `keybind = cmd+k=unbind` in the Ghostty config lets my-tui see that key. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running. The quit question names a session that is executing a command. F1 hides or shows the Sessions panel. F12 hides or shows the center panel.
 
 ### Commands
 
@@ -44,13 +44,21 @@ Host terminals and agent CLIs swallow most key chords, so most commands are in t
 
 | Key | Sessions panel focused | Files panel focused | Terminal or Preview focused |
 | --- | --- | --- | --- |
+| F1 | Toggle Sessions Panel | Toggle Sessions Panel | Toggle Sessions Panel |
 | F3 | Toggle Preview | Toggle Preview | Toggle Preview |
 | F6 | Rename the selected session | Rename the selected file or folder | Leave the key to the focused view/program |
+| F7 | Leave the key to the session list | Create a folder | Leave the key to the focused view/program |
 | F8 | Remove the selected session | Delete the selected file or folder, after confirmation | Leave the key to the focused view/program |
 | F9 | Command Palette | Command Palette | Command Palette |
+| Cmd+K | Command Palette | Command Palette | Command Palette |
 | F10 | Quit my-tui | Quit my-tui | Quit my-tui |
+| F12 | Toggle Center Panel | Toggle Center Panel | Toggle Center Panel |
+| Ctrl+Option+1 … 9 | Focus sessions 1–9 | Focus sessions 1–9 | Focus sessions 1–9 |
+| Ctrl+Option+0 | Focus session 10 | Focus session 10 | Focus session 10 |
 
-F6 and F8 follow keyboard focus, not just the selected tab. Removing a session does not delete its files; running sessions or scripts prompt before being stopped. File deletion is permanent (not Trash), and deleting a folder includes its contents. Its confirmation defaults to **Cancel**; Escape also cancels. Renaming does not overwrite existing files or folders.
+F6, F7, and F8 follow keyboard focus, not just the selected tab. Removing a session does not delete its files; running sessions or scripts prompt before being stopped. File deletion is permanent (not Trash), and deleting a folder includes its contents. Its confirmation defaults to **Cancel**; Escape also cancels. Renaming does not overwrite existing files or folders. F7 asks for a folder name. The new folder is created inside the selected folder, or in the same folder as the selected file. With nothing selected, it is created in the session directory. An existing file or folder is left in place. Escape cancels.
+
+The session list shows a number in front of each name. Ctrl+Option and that number focus the session from any panel, including a running terminal. Ctrl+Option+1 focuses session 1, through Ctrl+Option+9 for session 9. Ctrl+Option+0 focuses session 10. Sessions after 10 keep their numbers. Alt+Up and Alt+Down reorder the list, which changes which session a number focuses. Command+number stays with the host terminal's own tabs. Ghostty and iTerm deliver Ctrl+Option+number through the keyboard protocol Terminal.Gui turns on. Option is the Alt key.
 
 | Group | Command | What it does |
 | --- | --- | --- |
@@ -68,9 +76,10 @@ F6 and F8 follow keyboard focus, not just the selected tab. Removing a session d
 | Layout | Restore layout | Return to the default layout: Sessions and the center panel visible, Preview closed, and Sessions at its default width. |
 | Layout | Show Files | Show and focus the Files tab; restore the default layout first if Sessions or Preview is maximized. |
 | Layout | Show Terminal | Show and focus the Terminal tab; restore the default layout first if Sessions or Preview is maximized. |
-| Layout | Toggle Center Panel | Hide or show the session's center area containing Terminal and Files. |
+| Layout | Toggle Center Panel (F12) | Hide or show the session's center area containing Terminal and Files. |
 | Layout | Toggle Preview Panel (F3) | Toggle the preview panel on the right; it stays open while you use the terminal. |
-| Layout | Toggle Sessions Panel | Toggle the session list. |
+| Layout | Toggle Sessions Panel (F1) | Hide or show the session list. |
+| Files | Create folder (F7 in Files) | Create a folder inside the selected folder, or beside the selected file. |
 | Files | Delete selected file or folder (F8 in Files) | Permanently delete the selected item after confirmation. Folders include all contents. |
 | Files | Rename selected file or folder (F6 in Files) | Rename the selected item in place without overwriting an existing item. |
 | Files | Open selected file | Open the selected file in its system-default application while Files is active. |
@@ -82,14 +91,14 @@ F6 and F8 follow keyboard focus, not just the selected tab. Removing a session d
 | Clipboard | Copy selection or screen (Ctrl+Shift+C) | Copy selected text from the focused preview or terminal; with no selection, copy the preview contents or visible terminal screen. |
 | Clipboard | Paste (Ctrl+Shift+V) | Paste clipboard text into the terminal. |
 | App | About | Show application information. |
-| App | Quit (F10) | Quit my-tui, asking first if any terminal session or script is running. |
+| App | Quit (F10) | Quit my-tui, asking first if any terminal session or script is running. Sessions executing a command are named in the question. |
 | App | Theme | Choose and save the UI theme. |
 
 Drag in a preview to select text; releasing copies it, as in the terminal. Double-click selects a word and triple-click a line in plain-text previews. In plain-text previews, Ctrl+A selects all and Shift+Left/Right extends the selection. Previews are read-only: Ctrl+Shift+V pastes into the session's terminal, not the file.
 
-Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, until you restore the default layout or quit my-tui. Both panels keep a minimum width, and the terminal resizes to fit.
+Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, and it is saved for the next launch. Restore layout returns Sessions to its default width. Both panels keep a minimum width, and the terminal resizes to fit.
 
-Alt+Up and Alt+Down reorder sessions in the list. **Sort Sessions by Name** sorts the list case-insensitively on demand; manual reordering still works afterward. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program.
+Alt+Up and Alt+Down reorder sessions in the list. **Sort Sessions by Name** sorts the list case-insensitively on demand; manual reordering still works afterward. Either change renumbers the Ctrl+Option session chords. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program.
 
 Ctrl+C is passed to the running program to interrupt it. Child terminals start with default, unblocked signals rather than inheriting the host's ignored interrupts. If a program still will not exit, choose **Force stop terminal** from F9; this kills the shell and foreground job, discards their terminal output, and keeps the saved session. Unsaved work may be lost. Press Enter or choose **Start the session** to restart it.
 

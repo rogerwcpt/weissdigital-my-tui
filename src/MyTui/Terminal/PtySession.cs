@@ -248,6 +248,36 @@ internal sealed class PtySession : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// A foreground job or any child process. An interactive shell at its prompt is not busy.
+    /// </summary>
+    internal bool IsBusy
+    {
+        get
+        {
+            if (!IsRunning(_pid) || Volatile.Read(ref _reaped) != 0)
+            {
+                return false;
+            }
+
+            lock (_gate)
+            {
+                if (_disposed || _master < 0)
+                {
+                    return false;
+                }
+
+                int foreground = PtyNative.ForegroundGroup(_master);
+                if (foreground > 1 && foreground != _pid)
+                {
+                    return true;
+                }
+            }
+
+            return PtyNative.HasChild(_pid);
+        }
+    }
+
     internal static bool IsRunning(int pid)
     {
         if (pid <= 0)

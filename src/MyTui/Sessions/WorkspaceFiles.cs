@@ -44,6 +44,29 @@ internal static class WorkspaceFiles
         return target;
     }
 
+    /// <summary>
+    /// Creates one new folder named <paramref name="name"/> inside <paramref name="parent"/>.
+    /// <paramref name="parent"/> may be the workspace root. An existing file or folder is left alone.
+    /// </summary>
+    internal static string CreateDirectory(string root, string parent, string name)
+    {
+        string? problem = NameProblem(name);
+        if (problem is not null)
+        {
+            throw new ArgumentException(problem, nameof(name));
+        }
+
+        string directory = RequireContainer(root, parent);
+        string target = Path.Combine(directory, name);
+        if (Path.Exists(target))
+        {
+            throw new IOException("A file or folder with that name already exists.");
+        }
+
+        Directory.CreateDirectory(target);
+        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(target));
+    }
+
     internal static void Delete(string root, string path)
     {
         string source = RequireChild(root, path);
@@ -56,6 +79,33 @@ internal static class WorkspaceFiles
         {
             File.Delete(source);
         }
+    }
+
+    private static string RequireContainer(string root, string path)
+    {
+        string fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        string source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        bool rootItself = string.Equals(
+            Workspace.Real(fullRoot),
+            Workspace.Real(source),
+            OperatingSystem.IsMacOS() || OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
+        if (!rootItself)
+        {
+            source = RequireChild(root, path);
+        }
+        else if (!Workspace.IsInside(fullRoot, source))
+        {
+            throw new IOException("The selected path is outside the session directory.");
+        }
+
+        if (!Directory.Exists(source))
+        {
+            throw new IOException("That folder is not available.");
+        }
+
+        return source;
     }
 
     private static string RequireChild(string root, string path)

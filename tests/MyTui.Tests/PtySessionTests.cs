@@ -84,6 +84,27 @@ public class PtySessionTests
     }
 
     [UnixFact(Timeout = 15000)]
+    public async Task InteractiveShellIsBusyOnlyWhileACommandRuns()
+    {
+        PtySession? session = null;
+        try
+        {
+            session = PtySession.Start("/bin/sh", ["/bin/sh", "-i"], 80, 24, CleanEnv());
+            session.StartReading();
+            Assert.True(WaitUntil(() => !session.IsBusy, TimeSpan.FromSeconds(3)));
+            session.Write("sleep 2\n"u8);
+            Assert.True(WaitUntil(() => session.IsBusy, TimeSpan.FromSeconds(3)));
+            Assert.True(WaitUntil(() => !session.IsBusy, TimeSpan.FromSeconds(4)));
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [UnixFact(Timeout = 15000)]
     public async Task EchoesTypedBytes()
     {
         PtySession? session = null;

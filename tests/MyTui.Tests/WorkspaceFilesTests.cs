@@ -36,6 +36,64 @@ public sealed class WorkspaceFilesTests : IDisposable
         Assert.True(Directory.Exists(Root));
     }
 
+    [Fact]
+    public void CreateDirectoryMakesOneFolderInsideTheWorkspace()
+    {
+        string created = WorkspaceFiles.CreateDirectory(Root, Root, "fresh");
+        Assert.Equal(Path.Combine(Root, "fresh"), created);
+        Assert.True(Directory.Exists(created));
+
+        string parent = Directory.CreateDirectory(Path.Combine(Root, "parent")).FullName;
+        string child = WorkspaceFiles.CreateDirectory(Root, parent, "child");
+        Assert.Equal(Path.Combine(parent, "child"), child);
+        Assert.True(Directory.Exists(child));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CreateDirectoryDoesNotOverwrite(bool directory)
+    {
+        string target = Path.Combine(Root, "taken");
+        if (directory)
+        {
+            Directory.CreateDirectory(target);
+            File.WriteAllText(Path.Combine(target, "keep.txt"), "keep me");
+        }
+        else
+        {
+            File.WriteAllText(target, "keep me");
+        }
+
+        Assert.Throws<IOException>(() => WorkspaceFiles.CreateDirectory(Root, Root, "taken"));
+        Assert.Equal("keep me", File.ReadAllText(directory ? Path.Combine(target, "keep.txt") : target));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("../outside")]
+    [InlineData("nested/file")]
+    public void CreateDirectoryRejectsPathsAndInvalidNames(string name)
+    {
+        Assert.Throws<ArgumentException>(() => WorkspaceFiles.CreateDirectory(Root, Root, name));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Root));
+    }
+
+    [Fact]
+    public void CreateDirectoryCannotLeaveTheWorkspaceThroughALink()
+    {
+        string outside = Directory.CreateDirectory(Path.Combine(_parent, "outside")).FullName;
+        string link = Path.Combine(Root, "outside-link");
+        Directory.CreateSymbolicLink(link, outside);
+        Assert.Throws<IOException>(() => WorkspaceFiles.CreateDirectory(Root, link, "fresh"));
+        Assert.Throws<IOException>(() => WorkspaceFiles.CreateDirectory(Root, outside, "fresh"));
+        Assert.False(Directory.Exists(Path.Combine(outside, "fresh")));
+        Assert.False(Path.Exists(Path.Combine(Root, "fresh")));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

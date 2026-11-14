@@ -46,6 +46,9 @@ internal sealed class TerminalSession : IDisposable
 
     internal bool IsRunning => _pty is not null && PtySession.IsRunning(_pty.Pid);
 
+    /// <summary>The shell has a foreground command or a child process.</summary>
+    internal bool IsBusy => _pty?.IsBusy == true;
+
     internal bool HasExited => _pty is null || _pty.PollExited();
 
     internal string Label

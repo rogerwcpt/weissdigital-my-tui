@@ -102,7 +102,11 @@ internal static class SessionDialog
     }
 
     internal static string? AskName(
-        IApplication app, string initial, string title = "Rename session", Func<string, string?>? validate = null)
+        IApplication app,
+        string initial,
+        string title = "Rename session",
+        Func<string, string?>? validate = null,
+        string accept = "Rename")
     {
         var dialog = new Dialog
         {
@@ -134,7 +138,7 @@ internal static class SessionDialog
             args.Handled = true;
         };
         dialog.AddButton(new Button { Text = "Cancel" });
-        dialog.AddButton(new Button { Text = "Rename" });
+        dialog.AddButton(new Button { Text = accept });
         CloseDialog.CancelOnEsc(dialog, app);
         dialog.Initialized += (_, _) =>
         {

@@ -12,6 +12,9 @@ internal sealed class PersistedState
     public string? LastFocusedSessionId { get; set; }
 
     public string LastFocusedTab { get; set; } = "terminal";
+
+    /// <summary>Sessions panel width in columns. Missing means the default width.</summary>
+    public int? SessionsWidth { get; set; }
 }
 
 internal sealed class PersistedSession

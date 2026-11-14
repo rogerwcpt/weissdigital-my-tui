@@ -1,3 +1,4 @@
+using System.Reflection;
 using MyTui.Sessions;
 using MyTui.UI;
 using Terminal.Gui.App;
@@ -27,6 +28,8 @@ public class CommanderKeyTests
         Assert.Equal("renamed session", SessionManager.Load(workspace.StatePath).Focused!.Name);
         Assert.True(File.Exists(workspace.FilePath));
         workspace.SessionsList.SetFocus();
+        Assert.False(workspace.Screen.HandleChord(Key.F7));
+        Assert.False(Directory.Exists(Path.Combine(Path.GetDirectoryName(workspace.FilePath)!, "not-created")));
         Assert.True(workspace.SessionsList.NewKeyDownEvent(Key.F8));
         Assert.Empty(SessionManager.Load(workspace.StatePath).Sessions);
         Assert.True(File.Exists(workspace.FilePath));
@@ -54,6 +57,51 @@ public class CommanderKeyTests
         Assert.Equal("test session", SessionManager.Load(workspace.StatePath).Focused!.Name);
         Assert.True(workspace.Tree.HasFocus);
         Assert.Equal("preview text", workspace.Text.Content);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void F7CreatesAFolderBesideAFileOrInsideASelectedFolder(bool insideFolder)
+    {
+        using var workspace = new TestWorkspace();
+        string parent = insideFolder
+            ? Path.GetDirectoryName(workspace.NestedFilePath)!
+            : Path.GetDirectoryName(workspace.FilePath)!;
+        workspace.Select(insideFolder ? parent : workspace.FilePath);
+        workspace.PressWithDialog(Key.F7, dialog =>
+        {
+            Assert.Equal("Create folder", dialog.Title);
+            dialog.SubViews.OfType<TextField>().Single().Text = "fresh";
+            dialog.NewKeyDownEvent(Key.Enter);
+        });
+
+        string created = Path.Combine(parent, "fresh");
+        Assert.True(Directory.Exists(created));
+        Assert.Equal(created, workspace.Tree.SelectedObject!.Path);
+        Assert.True(workspace.Tree.HasFocus);
+        Assert.True(File.Exists(workspace.FilePath));
+        Assert.True(File.Exists(workspace.NestedFilePath));
+    }
+
+    [Fact]
+    public void F7EscapeCancelsAndDoesNotOverwrite()
+    {
+        using var workspace = new TestWorkspace();
+        workspace.Select(workspace.FilePath);
+        workspace.PressWithDialog(Key.F7, dialog => dialog.NewKeyDownEvent(Key.Esc));
+        Assert.True(File.Exists(workspace.FilePath));
+
+        workspace.PressWithDialog(Key.F7, dialog =>
+        {
+            dialog.SubViews.OfType<TextField>().Single().Text = "notes.txt";
+            dialog.Result = 1;
+            workspace.App.RequestStop(dialog);
+        });
+
+        Assert.Equal("preview text", File.ReadAllText(workspace.FilePath));
+        Assert.False(Directory.Exists(workspace.FilePath));
+        Assert.Equal(workspace.FilePath, workspace.Tree.SelectedObject!.Path);
     }
 
     [Theory]
@@ -141,8 +189,10 @@ public class CommanderKeyTests
         workspace.Screen.ExecuteCommand("terminal");
         workspace.Grid.SetFocus();
         Assert.False(workspace.Screen.HandleChord(Key.F6, inTerminal: true));
+        Assert.False(workspace.Screen.HandleChord(Key.F7, inTerminal: true));
         Assert.False(workspace.Screen.HandleChord(Key.F8, inTerminal: true));
         Assert.False(workspace.Screen.HandleChord(Key.F6));
+        Assert.False(workspace.Screen.HandleChord(Key.F7));
         Assert.False(workspace.Screen.HandleChord(Key.F8));
 
         workspace.Select(workspace.FilePath);
@@ -150,9 +200,48 @@ public class CommanderKeyTests
         workspace.Screen.ExecuteCommand("preview");
         Assert.True(workspace.Preview.HasFocus);
         Assert.False(workspace.Screen.HandleChord(Key.F6));
+        Assert.False(workspace.Screen.HandleChord(Key.F7));
         Assert.False(workspace.Screen.HandleChord(Key.F8));
         Assert.True(File.Exists(workspace.FilePath));
         Assert.Single(SessionManager.Load(workspace.StatePath).Sessions);
+    }
+
+    [Fact]
+    public void CtrlOptionDigitSwitchesNumberedSessionsFromTheTerminal()
+    {
+        using var workspace = new TestWorkspace();
+        Assert.StartsWith("1  test session", LabelAt(workspace.SessionsList, 0));
+        workspace.Screen.ExecuteCommand("duplicate");
+        Assert.Equal("test session-2", SessionManager.Load(workspace.StatePath).Focused!.Name);
+        Assert.StartsWith("2  test session-2", LabelAt(workspace.SessionsList, 1));
+
+        workspace.Screen.ExecuteCommand("terminal");
+        workspace.Grid.SetFocus();
+        Assert.True(workspace.Grid.NewKeyDownEvent(Key.D1.WithCtrl.WithAlt));
+        Assert.Equal("test session", SessionManager.Load(workspace.StatePath).Focused!.Name);
+        Assert.Equal(0, workspace.SessionsList.SelectedItem);
+        Assert.True(workspace.Grid.HasFocus);
+
+        Assert.True(workspace.Screen.HandleChord(Key.D2.WithCtrl.WithAlt));
+        Assert.Equal("test session-2", SessionManager.Load(workspace.StatePath).Focused!.Name);
+
+        Assert.True(workspace.Screen.HandleChord(Key.D0.WithCtrl.WithAlt));
+        Assert.Equal("test session-2", SessionManager.Load(workspace.StatePath).Focused!.Name);
+        Assert.Equal(
+            "No session 10",
+            workspace.Screen.Sessions.SubViews.OfType<Label>().Single().Text.ToString());
+    }
+
+    private static string LabelAt(ListView list, int index)
+    {
+        object source = list.Source ?? throw new InvalidOperationException("Session list has no source.");
+        System.Collections.IEnumerable? items = source.GetType()
+            .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Select(field => field.GetValue(source))
+            .OfType<System.Collections.IEnumerable>()
+            .FirstOrDefault(value => value is not string);
+        Assert.NotNull(items);
+        return items.Cast<object>().ElementAt(index).ToString() ?? "";
     }
 
     private sealed class TestWorkspace : IDisposable

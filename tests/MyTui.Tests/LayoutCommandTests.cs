@@ -11,6 +11,23 @@ namespace MyTui.Tests;
 public class LayoutCommandTests
 {
     [Fact]
+    public void F1TogglesTheSessionsPanelFromTheTerminal()
+    {
+        using var workspace = new TestWorkspace();
+        Assert.True(workspace.Screen.Sessions.Visible);
+        workspace.Screen.ExecuteCommand("terminal");
+        workspace.Grid.SetFocus();
+
+        Assert.True(workspace.Grid.NewKeyDownEvent(Key.F1));
+        Assert.False(workspace.Screen.Sessions.Visible);
+        Assert.True(workspace.Screen.Content.Visible);
+
+        Assert.True(workspace.Screen.HandleChord(Key.F1, inTerminal: true));
+        Assert.True(workspace.Screen.Sessions.Visible);
+        Assert.True(workspace.Screen.Sessions.HasFocus);
+    }
+
+    [Fact]
     public void CenterPanelCanBeHiddenAndShownWithoutChangingTheTab()
     {
         using var workspace = new TestWorkspace();
@@ -18,6 +35,9 @@ public class LayoutCommandTests
         workspace.Run("Toggle Center Panel");
 
         Assert.False(workspace.Screen.Content.Visible);
+        Assert.True(workspace.Screen.HandleChord(Key.F12));
+        Assert.True(workspace.Screen.Content.Visible);
+        Assert.True(workspace.Screen.HandleChord(Key.F12));
         Assert.True(workspace.Screen.Sessions.Visible);
         Assert.True(workspace.Screen.Sessions.HasFocus);
 
@@ -148,16 +168,57 @@ public class LayoutCommandTests
         Assert.True(workspace.Tabs.Value.HasFocus);
     }
 
+    [Fact]
+    public void DraggedSessionsWidthSurvivesRelaunchUntilRestoreLayout()
+    {
+        string directory = Directory.CreateTempSubdirectory("my-tui-width").FullName;
+        try
+        {
+            using (var first = new TestWorkspace(directory))
+            {
+                first.ResizeSessions();
+                first.Run("Show Files");
+                Assert.Equal(44, first.Screen.Sessions.Frame.Width);
+                Assert.Equal(44, SessionManager.Load(first.StatePath).SessionsWidth);
+            }
+
+            using (var second = new TestWorkspace(directory, createSession: false))
+            {
+                Assert.Equal(44, second.Screen.Sessions.Frame.Width);
+                second.Run("Restore layout");
+                Assert.Equal(SessionSplitter.DefaultWidth, second.Screen.Sessions.Frame.Width);
+                Assert.Null(SessionManager.Load(second.StatePath).SessionsWidth);
+            }
+
+            using (var third = new TestWorkspace(directory, createSession: false))
+            {
+                third.AssertDefaultLayout();
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private sealed class TestWorkspace : IDisposable
     {
-        private readonly string _directory = Directory.CreateTempSubdirectory("my-tui-layout").FullName;
+        private readonly string _directory;
+        private readonly bool _deleteDirectory;
         private readonly IApplication _app = Application.Create();
         private readonly View _parent;
-        private string StatePath => Path.Combine(_directory, "state.json");
 
-        internal TestWorkspace()
+        internal string StatePath => Path.Combine(_directory, "state.json");
+
+        internal TestWorkspace(string? directory = null, bool createSession = true)
         {
-            SessionManager.Load(StatePath).Create("test", _directory, "/bin/sh", []);
+            _directory = directory ?? Directory.CreateTempSubdirectory("my-tui-layout").FullName;
+            _deleteDirectory = directory is null;
+            if (createSession)
+            {
+                SessionManager.Load(StatePath).Create("test", _directory, "/bin/sh", []);
+            }
+
             Screen = new SessionScreen(_app);
             _parent = new View { App = _app, Width = 100, Height = 30, CanFocus = true };
             _parent.Add(Screen.Sessions, Screen.Content);
@@ -224,7 +285,10 @@ public class LayoutCommandTests
             Screen.Dispose();
             _parent.Dispose();
             _app.Dispose();
-            Directory.Delete(_directory, recursive: true);
+            if (_deleteDirectory)
+            {
+                Directory.Delete(_directory, recursive: true);
+            }
         }
     }
 }

@@ -8,6 +8,9 @@ internal sealed class SessionManager
     private readonly StateStore _store;
     private int _focused;
 
+    /// <summary>Saved Sessions panel width. Missing means the default width.</summary>
+    internal int? SessionsWidth { get; private set; }
+
     private SessionManager(StateStore store) => _store = store;
 
     internal IReadOnlyList<Session> Sessions => _sessions;
@@ -36,6 +39,7 @@ internal sealed class SessionManager
         int index = manager._sessions.FindIndex(session =>
             string.Equals(session.Id.ToString("D"), state.LastFocusedSessionId, StringComparison.OrdinalIgnoreCase));
         manager._focused = index >= 0 ? index : 0;
+        manager.SessionsWidth = state.SessionsWidth is > 0 ? state.SessionsWidth : null;
         return manager;
     }
 
@@ -172,6 +176,22 @@ internal sealed class SessionManager
         Save();
     }
 
+    internal void SetSessionsWidth(int? width)
+    {
+        if (width is <= 0)
+        {
+            width = null;
+        }
+
+        if (width == SessionsWidth)
+        {
+            return;
+        }
+
+        SessionsWidth = width;
+        Save();
+    }
+
     private void Save() => _store.Save(Snapshot());
 
     private PersistedState Snapshot()
@@ -180,6 +200,7 @@ internal sealed class SessionManager
         {
             LastFocusedSessionId = Focused?.Id.ToString("D"),
             LastFocusedTab = SessionTabNames.Format(Focused?.Tab ?? SessionTab.Terminal),
+            SessionsWidth = SessionsWidth,
         };
         foreach (Session session in _sessions)
         {

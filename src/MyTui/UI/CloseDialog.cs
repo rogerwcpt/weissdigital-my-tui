@@ -55,16 +55,15 @@ internal static class CloseDialog
         }
     }
 
-    internal static bool ConfirmQuit(IApplication app, int running)
+    internal static bool ConfirmQuit(IApplication app, int running, string? detail = null)
     {
-        string message = running == 1
-            ? "1 session is still running. Quit and stop it?"
-            : running + " sessions are still running. Quit and stop them?";
+        string message = QuitMessage(running, detail);
+        bool extra = message.Contains('\n');
         var dialog = new Dialog
         {
             Title = "Quit",
-            Width = 62,
-            Height = 7,
+            Width = extra ? 72 : 62,
+            Height = extra ? 8 : 7,
         };
         dialog.Add(new Label
         {
@@ -72,7 +71,7 @@ internal static class CloseDialog
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = 2,
+            Height = extra ? 3 : 2,
             CanFocus = false,
         });
         var cancel = new Button { Text = "Cancel" };
@@ -93,6 +92,58 @@ internal static class CloseDialog
         {
             dialog.Dispose();
         }
+    }
+
+    internal static string QuitMessage(int running, string? detail)
+    {
+        string message = running == 1
+            ? "1 session is still running. Quit and stop it?"
+            : running + " sessions are still running. Quit and stop them?";
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return message;
+        }
+
+        return message + "\n" + detail.Trim();
+    }
+
+    /// <summary>One extra line naming sessions whose shells are executing a command.</summary>
+    internal static string BusyQuitText(IReadOnlyList<string> names)
+    {
+        if (names.Count == 0)
+        {
+            return "";
+        }
+
+        if (names.Count == 1)
+        {
+            return Fit(names[0]) + " is executing a command.";
+        }
+
+        return FitList(names) + " are executing a command.";
+    }
+
+    private static string FitList(IReadOnlyList<string> names)
+    {
+        const int limit = 3;
+        int take = Math.Min(limit, names.Count);
+        var shown = new string[take];
+        for (int i = 0; i < take; i++)
+        {
+            shown[i] = Fit(names[i]);
+        }
+
+        if (names.Count > limit)
+        {
+            return string.Join(", ", shown) + ", and " + (names.Count - limit) + " more";
+        }
+
+        if (shown.Length == 2)
+        {
+            return shown[0] + " and " + shown[1];
+        }
+
+        return shown[0] + ", " + shown[1] + ", and " + shown[2];
     }
 
     internal static bool ConfirmDelete(IApplication app, string name, bool directory)
