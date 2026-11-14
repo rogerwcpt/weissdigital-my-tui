@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
@@ -60,12 +61,84 @@ internal static class CommandPalette
 
     private static readonly int ShortcutColumn = EntriesMax(static entry => entry.Detail.Length);
 
-    internal static IEnumerable<Entry> Matches(string text, bool filesActive) =>
-        Entries.Where(entry =>
-            (filesActive || entry.Id is not ("open-file" or "run-script" or "rename-file" or "delete-file" or "create-folder"))
-            && (text.Length == 0
-                || entry.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
-                || entry.Detail.Contains(text, StringComparison.OrdinalIgnoreCase)));
+    internal const string GotoPrefix = "goto:";
+
+    /// <summary>
+    /// Sessions first, in list order, then the fixed commands. A number in the title matches the
+    /// session list. The first ten rows also show the Ctrl+Option chord.
+    /// </summary>
+    internal static IEnumerable<Entry> Matches(string text, bool filesActive, IReadOnlyList<string>? sessions = null)
+    {
+        if (sessions is not null)
+        {
+            for (int i = 0; i < sessions.Count; i++)
+            {
+                Entry entry = SessionEntry(sessions[i], i);
+                if (Hits(entry, text))
+                {
+                    yield return entry;
+                }
+            }
+        }
+
+        foreach (Entry entry in Entries)
+        {
+            if ((filesActive || entry.Id is not ("open-file" or "run-script" or "rename-file" or "delete-file" or "create-folder"))
+                && Hits(entry, text))
+            {
+                yield return entry;
+            }
+        }
+    }
+
+    internal static Entry SessionEntry(string name, int index) =>
+        new("Go to", SessionScreen.Numbered(name, index), SessionShortcut(index), GotoId(index));
+
+    internal static string GotoId(int index) =>
+        GotoPrefix + index.ToString(CultureInfo.InvariantCulture);
+
+    internal static bool TryGoto(string? id, out int index)
+    {
+        index = -1;
+        if (id is null || !id.StartsWith(GotoPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return int.TryParse(id.AsSpan(GotoPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out index)
+            && index >= 0;
+    }
+
+    /// <summary>1 through 9 select sessions 1 through 9. 0 selects session 10. The index is zero-based.</summary>
+    internal static bool TryBareDigit(Key key, out int index)
+    {
+        index = -1;
+        if (key.IsCtrl || key.IsAlt || key.IsShift)
+        {
+            return false;
+        }
+
+        int digit = (int)key.KeyCode - (int)Key.D0.KeyCode;
+        if (digit is < 0 or > 9)
+        {
+            return false;
+        }
+
+        index = digit == 0 ? 9 : digit - 1;
+        return true;
+    }
+
+    internal static string SessionShortcut(int index) => index switch
+    {
+        < 9 => "Ctrl+Option+" + (index + 1).ToString(CultureInfo.InvariantCulture),
+        9 => "Ctrl+Option+0",
+        _ => "",
+    };
+
+    private static bool Hits(Entry entry, string text) =>
+        text.Length == 0
+        || entry.Title.Contains(text, StringComparison.OrdinalIgnoreCase)
+        || entry.Detail.Contains(text, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Rows as shown: a null entry is a group heading, followed by that group's matches.</summary>
     internal static List<Entry?> Rows(IEnumerable<Entry> matches)
@@ -92,7 +165,7 @@ internal static class CommandPalette
             .ThenBy(entry => entry.Title, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-    internal static string? Ask(IApplication app, bool filesActive)
+    internal static string? Ask(IApplication app, bool filesActive, IReadOnlyList<string>? sessions = null)
     {
         var shown = new ObservableCollection<string>();
         List<Entry?> rows = [];
@@ -134,7 +207,7 @@ internal static class CommandPalette
 
             filling = true;
             string text = query.Text?.ToString()?.Trim() ?? "";
-            List<Entry> found = Matches(text, filesActive).ToList();
+            List<Entry> found = Matches(text, filesActive, sessions).ToList();
             rows = Rows(found);
             int width = Math.Max(list.Viewport.Width, NameColumn + ShortcutColumn + 2);
             shown.Clear();
@@ -179,6 +252,37 @@ internal static class CommandPalette
             app.RequestStop(dialog);
         }
 
+        // A bare number jumps to that session while the filter is empty. The Ctrl+Option chord
+        // does the same even after typing, because it is not a search character.
+        bool TakeDigit(Key key)
+        {
+            bool chord = AppKeys.TrySession(key, out int index);
+            bool bare = !chord && TryBareDigit(key, out index);
+            if (!chord && !bare)
+            {
+                return false;
+            }
+
+            if (chosen is not null)
+            {
+                return true;
+            }
+
+            if (bare && (query.Text?.ToString()?.Length ?? 0) > 0)
+            {
+                return false;
+            }
+
+            if (sessions is null || index < 0 || index >= sessions.Count)
+            {
+                return false;
+            }
+
+            chosen = GotoId(index);
+            app.RequestStop(dialog);
+            return true;
+        }
+
         var laidOutWidth = 0;
         query.TextChanged += (_, _) => Refilter();
         // Width changes the right-aligned shortcut column. Scroll changes Viewport.Y, and
@@ -195,6 +299,12 @@ internal static class CommandPalette
         };
         query.KeyDown += (_, key) =>
         {
+            if (TakeDigit(key))
+            {
+                key.Handled = true;
+                return;
+            }
+
             if (key == Key.Enter)
             {
                 Accept();
@@ -209,6 +319,7 @@ internal static class CommandPalette
             }
         };
         list.Activate = Accept;
+        list.TakeKey = TakeDigit;
         list.IsHeading = row => row >= 0 && row < rows.Count && rows[row] is null;
         // Headings are not commands. Selection steps over them in the direction it was moving.
         list.ValueChanged += (_, _) =>
@@ -237,6 +348,12 @@ internal static class CommandPalette
         };
         dialog.KeyDown += (_, key) =>
         {
+            if (TakeDigit(key))
+            {
+                key.Handled = true;
+                return;
+            }
+
             if (key != Key.Enter)
             {
                 return;
@@ -276,6 +393,8 @@ internal static class CommandPalette
     {
         internal Action? Activate { get; set; }
 
+        internal Func<Key, bool>? TakeKey { get; set; }
+
         internal Func<int, bool>? IsHeading { get; set; }
 
         protected override bool OnKeyDown(Key key)
@@ -283,6 +402,11 @@ internal static class CommandPalette
             if (key == Key.Enter)
             {
                 Activate?.Invoke();
+                return true;
+            }
+
+            if (TakeKey?.Invoke(key) == true)
+            {
                 return true;
             }
 

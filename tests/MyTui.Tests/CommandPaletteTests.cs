@@ -1,4 +1,5 @@
 using MyTui.UI;
+using Terminal.Gui.Input;
 
 namespace MyTui.Tests;
 
@@ -126,6 +127,86 @@ public class CommandPaletteTests
             ["Maximize/Restore", "Restore layout", "Show Files", "Show Terminal",
              "Toggle Center Panel", "Toggle Preview Panel", "Toggle Sessions Panel"],
             titles);
+    }
+
+    [Fact]
+    public void SessionsLeadThePaletteInListOrder()
+    {
+        string[] sessions = ["zeta", "alpha"];
+        List<CommandPalette.Entry> entries = CommandPalette.Matches("", filesActive: false, sessions).ToList();
+
+        Assert.Equal("Go to", entries[0].Group);
+        Assert.Equal(SessionScreen.Numbered("zeta", 0), entries[0].Title);
+        Assert.Equal("Ctrl+Option+1", entries[0].Detail);
+        Assert.Equal("goto:0", entries[0].Id);
+        Assert.Equal(SessionScreen.Numbered("alpha", 1), entries[1].Title);
+        Assert.Equal("Ctrl+Option+2", entries[1].Detail);
+        Assert.Equal(
+            ["Go to", "Session", "Layout", "Files", "Clipboard", "App"],
+            entries.Select(entry => entry.Group).Distinct().ToList());
+    }
+
+    [Fact]
+    public void EleventhSessionKeepsItsNumberWithoutAChord()
+    {
+        string[] sessions = Enumerable.Range(1, 11).Select(number => "s" + number).ToArray();
+        List<CommandPalette.Entry> going = CommandPalette.Matches("", filesActive: false, sessions)
+            .Where(entry => entry.Group == "Go to")
+            .ToList();
+
+        Assert.Equal(11, going.Count);
+        Assert.Equal("Ctrl+Option+0", going[9].Detail);
+        Assert.Equal("goto:9", going[9].Id);
+        Assert.Equal("", going[10].Detail);
+        Assert.Equal(SessionScreen.Numbered("s11", 10), going[10].Title);
+    }
+
+    [Fact]
+    public void FilterMatchesASessionNameOrItsChord()
+    {
+        string[] sessions = ["notes", "build"];
+
+        Assert.Equal("goto:0", Assert.Single(
+            CommandPalette.Matches("NOTES", filesActive: false, sessions),
+            entry => entry.Group == "Go to").Id);
+        Assert.Contains(
+            CommandPalette.Matches("ctrl+option+2", filesActive: false, sessions),
+            entry => entry.Id == "goto:1");
+        Assert.DoesNotContain(
+            CommandPalette.Matches("ctrl+option+2", filesActive: false, sessions),
+            entry => entry.Id == "goto:0");
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 1)]
+    [InlineData(9, 8)]
+    [InlineData(0, 9)]
+    public void BareDigitSelectsThatSession(int digit, int index)
+    {
+        Key key = digit switch
+        {
+            0 => Key.D0,
+            1 => Key.D1,
+            2 => Key.D2,
+            _ => Key.D9,
+        };
+
+        Assert.True(CommandPalette.TryBareDigit(key, out int found));
+        Assert.Equal(index, found);
+        Assert.False(CommandPalette.TryBareDigit(key.WithCtrl.WithAlt, out _));
+        Assert.False(CommandPalette.TryBareDigit(key.WithShift, out _));
+    }
+
+    [Fact]
+    public void GotoIdRoundTrips()
+    {
+        Assert.Equal("goto:10", CommandPalette.GotoId(10));
+        Assert.True(CommandPalette.TryGoto("goto:10", out int index));
+        Assert.Equal(10, index);
+        Assert.False(CommandPalette.TryGoto("quit", out _));
+        Assert.False(CommandPalette.TryGoto("goto:", out _));
+        Assert.False(CommandPalette.TryGoto("goto:-1", out _));
     }
 
     [Fact]

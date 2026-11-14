@@ -1026,7 +1026,10 @@ internal sealed class SessionScreen : IDisposable
         string? id;
         try
         {
-            id = CommandPalette.Ask(_app, FilesActive);
+            IReadOnlyList<string> sessions = _manager is null
+                ? []
+                : _manager.Sessions.Select(session => session.Name).ToList();
+            id = CommandPalette.Ask(_app, FilesActive, sessions);
         }
         finally
         {
@@ -1038,6 +1041,12 @@ internal sealed class SessionScreen : IDisposable
 
     internal void ExecuteCommand(string? id)
     {
+        if (CommandPalette.TryGoto(id, out int sessionIndex))
+        {
+            SwitchSession(sessionIndex);
+            return;
+        }
+
         switch (id)
         {
             case "new":
@@ -2159,7 +2168,7 @@ internal sealed class SessionScreen : IDisposable
 
     private string RowText(Session session, int index)
     {
-        string label = Numbered(session.ListLabel, index);
+        string label = Numbered(Spinner.Mark(session.ListLabel, session.IsBusy, Environment.TickCount64), index);
         if (_manager is null || index != _manager.FocusedIndex)
         {
             return ActivityLabel(label, _unseen.Contains(session), _rang.Contains(session));
@@ -2184,7 +2193,9 @@ internal sealed class SessionScreen : IDisposable
 
     private void RefreshWindowTitle()
     {
-        string title = _manager?.Focused is Session session ? session.WindowTitle : "Session";
+        string title = _manager?.Focused is Session session
+            ? Spinner.Mark(session.WindowTitle, session.IsBusy, Environment.TickCount64)
+            : "Session";
         if (Content.Title != title)
         {
             Content.Title = title;

@@ -36,7 +36,7 @@ The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar
 dotnet run --project src/MyTui
 ```
 
-F9 or Cmd+K opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. Cmd+K reaches my-tui only when the host terminal forwards it. Ghostty binds Cmd+K to clear the screen by default; `keybind = cmd+k=unbind` in the Ghostty config lets my-tui see that key. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running. The quit question names a session that is executing a command. F1 hides or shows the Sessions panel. F12 hides or shows the center panel.
+F9 or Cmd+K opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. Cmd+K reaches my-tui only when the host terminal forwards it. Ghostty binds Cmd+K to clear the screen by default; `keybind = cmd+k=unbind` in the Ghostty config lets my-tui see that key. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running. A session that is executing a command shows a spinner, `| / - \`, after its name. The quit question names that session. F1 hides or shows the Sessions panel. F12 hides or shows the center panel.
 
 ### Commands
 
@@ -60,8 +60,11 @@ F6, F7, and F8 follow keyboard focus, not just the selected tab. Removing a sess
 
 The session list shows a number in front of each name. Ctrl+Option and that number focus the session from any panel, including a running terminal. Ctrl+Option+1 focuses session 1, through Ctrl+Option+9 for session 9. Ctrl+Option+0 focuses session 10. Sessions after 10 keep their numbers. Alt+Up and Alt+Down reorder the list, which changes which session a number focuses. Command+number stays with the host terminal's own tabs. Ghostty and iTerm deliver Ctrl+Option+number through the keyboard protocol Terminal.Gui turns on. Option is the Alt key.
 
+F9 lists every session under **Go to**, with the same number and, for the first ten, the Ctrl+Option chord. Press that number while the filter is empty, or highlight the row and press Enter. The palette closes and that session is focused. 0 focuses session 10. Later sessions stay in the list and open from their row.
+
 | Group | Command | What it does |
 | --- | --- | --- |
+| Go to | Session name (Ctrl+Option+number) | Focus that session and close the palette. 1–9 and 0 do this while the filter is empty. |
 | Session | Close the session (F8 in Sessions) | Close the selected session, asking first if it is running. |
 | Session | Duplicate session | Start a fresh copy of the selected session. |
 | Session | Edit the session | Edit the selected session's settings. |
