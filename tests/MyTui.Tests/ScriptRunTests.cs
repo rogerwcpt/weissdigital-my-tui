@@ -76,17 +76,19 @@ public class ScriptRunTests
     }
 
     [UnixFact]
-    public async Task StopKillsTheInterpreterAndItsChildAndKeepsOutput()
+    public async Task StopKillsTheInterpreterAndItsChildAndDrainsPendingOutput()
     {
         using var workspace = new TestDirectory();
         string path = workspace.Script("stop.sh", """
             sleep 60 &
             printf '%s' "$!" > child.pid
-            printf 'ready\n'
+            printf 'stdout-ready\n'
+            printf 'stderr-ready\n' >&2
+            touch ready
             wait
             """);
         using var run = ScriptRun.Start(workspace.Path, path);
-        await Until(() => run.Capture().Text.Contains("ready"));
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(System.IO.Path.Combine(workspace.Path, "ready")), 5000));
         int child = int.Parse(File.ReadAllText(System.IO.Path.Combine(workspace.Path, "child.pid")));
         Assert.True(IsRunning(child));
         run.Stop();
@@ -95,7 +97,8 @@ public class ScriptRunTests
         await Until(() => !IsRunning(child));
         Assert.False(run.IsRunning);
         Assert.Equal("stopped", run.Capture().Status);
-        Assert.Contains("ready", run.Capture().Text);
+        Assert.Contains("stdout-ready", run.Capture().Text);
+        Assert.Contains("stderr-ready", run.Capture().Text);
     }
 
     [UnixFact]

@@ -166,7 +166,7 @@ internal sealed class ScriptRun : IDisposable
             }
 
             _stopped = true;
-            _cancel.Cancel();
+            // Let ReadOutputAsync drain the pipes before its timeout cancels pending reads.
         }
     }
 
