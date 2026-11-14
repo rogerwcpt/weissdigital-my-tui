@@ -87,6 +87,42 @@ public class ActiveRowTests
         Assert.StartsWith("shell · stopped", row);
     }
 
+    [Theory]
+    [InlineData("short", true)]
+    [InlineData("a much longer session name", true)]
+    [InlineData("short", false)]
+    [InlineData("a much longer session name", false)]
+    public void BusyPulseStaysBeforeTheCloseColumn(string label, bool active)
+    {
+        string row = SessionScreen.SessionRow(label, 20, active, '█');
+
+        Assert.Equal(20, row.EnumerateRunes().Count());
+        Assert.Equal('█', row[^3]);
+        Assert.Equal(' ', row[^2]);
+        Assert.Equal(active ? '×' : ' ', row[^1]);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void NarrowBusyRowsDoNotThrow(int width)
+    {
+        string row = SessionScreen.SessionRow("shell", width, active: true, pulse: '█');
+
+        if (width >= 2)
+        {
+            Assert.Equal(width, row.Length);
+            Assert.EndsWith("×", row);
+        }
+    }
+
+    [Fact]
+    public void QuietInactiveRowStaysPlain()
+    {
+        Assert.Equal("shell", SessionScreen.SessionRow("shell", 20, active: false));
+    }
+
     [Fact]
     public void LongNameKeepsTheCloseMark()
     {

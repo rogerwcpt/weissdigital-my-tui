@@ -7,13 +7,13 @@ namespace MyTui.UI;
 
 internal static class CloseDialog
 {
-    internal static bool Confirm(IApplication app, string name)
-        => Confirm(app, name, force: false);
+    internal static bool Confirm(IApplication app, string name, bool running)
+        => Confirm(app, name, running, force: false);
 
     internal static bool ConfirmStop(IApplication app, string name)
-        => Confirm(app, name, force: true);
+        => Confirm(app, name, running: true, force: true);
 
-    private static bool Confirm(IApplication app, string name, bool force)
+    private static bool Confirm(IApplication app, string name, bool running, bool force)
     {
         var dialog = new Dialog
         {
@@ -25,7 +25,7 @@ internal static class CloseDialog
         {
             Text = force
                 ? Fit(name) + ": force stop? Unsaved work may be lost."
-                : Fit(name) + " is still running. Close it?",
+                : running ? Fit(name) + " is still running. Close it?" : "Close " + Fit(name) + "?",
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
@@ -36,14 +36,11 @@ internal static class CloseDialog
         dialog.AddButton(cancel);
         var close = new Button { Text = force ? "Force stop" : "Close" };
         dialog.AddButton(close);
-        if (force)
-        {
-            close.IsDefault = false;
-            cancel.IsDefault = true;
-        }
+        close.IsDefault = false;
+        cancel.IsDefault = true;
 
         CancelOnEsc(dialog, app);
-        dialog.Initialized += (_, _) => (force ? cancel : close).SetFocus();
+        dialog.Initialized += (_, _) => cancel.SetFocus();
         try
         {
             app.Run(dialog);

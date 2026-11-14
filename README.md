@@ -36,7 +36,7 @@ The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar
 dotnet run --project src/MyTui
 ```
 
-F9 or Cmd+K opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. Cmd+K reaches my-tui only when the host terminal forwards it. Ghostty binds Cmd+K to clear the screen by default; `keybind = cmd+k=unbind` in the Ghostty config lets my-tui see that key. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running. A session that is executing a command shows a spinner, `| / - \`, after its name. The quit question names that session. F1 hides or shows the Sessions panel. F12 hides or shows the center panel.
+F9 or Cmd+K opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. Cmd+K reaches my-tui only when the host terminal forwards it. Ghostty binds Cmd+K to clear the screen by default; `keybind = cmd+k=unbind` in the Ghostty config lets my-tui see that key. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running. A session that is executing a command shows a slow cursor pulse, cycling through `▁ → ▄ → █ → ▄` every 700 ms, right-aligned just before the close × in the Sessions list. The quit question names that session. F1 hides or shows the Sessions panel. F12 hides or shows the center panel.
 
 ### Commands
 
@@ -48,7 +48,7 @@ Host terminals and agent CLIs swallow most key chords, so most commands are in t
 | F3 | Toggle Preview | Toggle Preview | Toggle Preview |
 | F6 | Rename the selected session | Rename the selected file or folder | Leave the key to the focused view/program |
 | F7 | Leave the key to the session list | Create a folder | Leave the key to the focused view/program |
-| F8 | Remove the selected session | Delete the selected file or folder, after confirmation | Leave the key to the focused view/program |
+| F8 | Remove the selected session, after confirmation | Delete the selected file or folder, after confirmation | Leave the key to the focused view/program |
 | F9 | Command Palette | Command Palette | Command Palette |
 | Cmd+K | Command Palette | Command Palette | Command Palette |
 | F10 | Quit my-tui | Quit my-tui | Quit my-tui |
@@ -56,7 +56,7 @@ Host terminals and agent CLIs swallow most key chords, so most commands are in t
 | Ctrl+Option+1 … 9 | Focus sessions 1–9 | Focus sessions 1–9 | Focus sessions 1–9 |
 | Ctrl+Option+0 | Focus session 10 | Focus session 10 | Focus session 10 |
 
-F6, F7, and F8 follow keyboard focus, not just the selected tab. Removing a session does not delete its files; running sessions or scripts prompt before being stopped. File deletion is permanent (not Trash), and deleting a folder includes its contents. Its confirmation defaults to **Cancel**; Escape also cancels. Renaming does not overwrite existing files or folders. F7 asks for a folder name. The new folder is created inside the selected folder, or in the same folder as the selected file. With nothing selected, it is created in the session directory. An existing file or folder is left in place. Escape cancels.
+F6, F7, and F8 follow keyboard focus, not just the selected tab. Removing a session always asks for confirmation and does not delete its files; running sessions or scripts are stopped only after confirmation. File deletion is permanent (not Trash), and deleting a folder includes its contents. Both confirmations default to **Cancel**; Escape also cancels. Renaming does not overwrite existing files or folders. F7 asks for a folder name. The new folder is created inside the selected folder, or in the same folder as the selected file. With nothing selected, it is created in the session directory. An existing file or folder is left in place. Escape cancels.
 
 The session list shows a number in front of each name. Ctrl+Option and that number focus the session from any panel, including a running terminal. Ctrl+Option+1 focuses session 1, through Ctrl+Option+9 for session 9. Ctrl+Option+0 focuses session 10. Sessions after 10 keep their numbers. Alt+Up and Alt+Down reorder the list, which changes which session a number focuses. Command+number stays with the host terminal's own tabs. Ghostty and iTerm deliver Ctrl+Option+number through the keyboard protocol Terminal.Gui turns on. Option is the Alt key.
 
@@ -65,7 +65,7 @@ F9 lists every session under **Go to**, with the same number and, for the first 
 | Group | Command | What it does |
 | --- | --- | --- |
 | Go to | Session name (Ctrl+Option+number) | Focus that session and close the palette. 1–9 and 0 do this while the filter is empty. |
-| Session | Close the session (F8 in Sessions) | Close the selected session, asking first if it is running. |
+| Session | Close the session (F8 in Sessions) | Close the selected session after confirmation, stopping its terminal or script if running. |
 | Session | Duplicate session | Start a fresh copy of the selected session. |
 | Session | Edit the session | Edit the selected session's settings. |
 | Session | Force stop terminal | Forcefully terminate the selected terminal after confirmation, keeping the session so it can be restarted. |

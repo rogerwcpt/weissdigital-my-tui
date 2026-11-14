@@ -30,7 +30,12 @@ public class CommanderKeyTests
         workspace.SessionsList.SetFocus();
         Assert.False(workspace.Screen.HandleChord(Key.F7));
         Assert.False(Directory.Exists(Path.Combine(Path.GetDirectoryName(workspace.FilePath)!, "not-created")));
-        Assert.True(workspace.SessionsList.NewKeyDownEvent(Key.F8));
+        workspace.PressWithDialog(Key.F8, dialog =>
+        {
+            Assert.Equal("Close session", dialog.Title);
+            dialog.Result = 1;
+            workspace.App.RequestStop(dialog);
+        });
         Assert.Empty(SessionManager.Load(workspace.StatePath).Sessions);
         Assert.True(File.Exists(workspace.FilePath));
     }
@@ -102,6 +107,94 @@ public class CommanderKeyTests
         Assert.Equal("preview text", File.ReadAllText(workspace.FilePath));
         Assert.False(Directory.Exists(workspace.FilePath));
         Assert.Equal(workspace.FilePath, workspace.Tree.SelectedObject!.Path);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void F8SessionCloseDefaultsToCancelAndEscapeCancels(bool running, bool escape)
+    {
+        using var workspace = new TestWorkspace();
+        if (running)
+        {
+            workspace.Screen.ExecuteCommand("start");
+            Assert.True(workspace.Grid.Session!.IsRunning);
+        }
+
+        workspace.SessionsList.SetFocus();
+        workspace.PressWithDialog(Key.F8, dialog =>
+        {
+            Assert.Equal("Close session", dialog.Title);
+            string message = dialog.SubViews.OfType<Label>().Single().Text;
+            Assert.Contains("test session", message);
+            Assert.Equal(running, message.Contains("still running"));
+            Button cancel = dialog.Buttons.Single(button => button.IsDefault);
+            Assert.Equal("Cancel", cancel.Text);
+            Assert.True(cancel.HasFocus);
+            dialog.NewKeyDownEvent(escape ? Key.Esc : Key.Enter);
+        });
+
+        Assert.Single(SessionManager.Load(workspace.StatePath).Sessions);
+        Assert.True(File.Exists(workspace.FilePath));
+        Assert.True(workspace.SessionsList.HasFocus);
+        if (running)
+        {
+            Assert.True(workspace.Grid.Session!.IsRunning);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void F8ClosesTheSessionOnlyAfterConfirmation(bool running)
+    {
+        using var workspace = new TestWorkspace();
+        if (running)
+        {
+            workspace.Screen.ExecuteCommand("start");
+            Assert.True(workspace.Grid.Session!.IsRunning);
+        }
+
+        var terminal = workspace.Grid.Session;
+        workspace.SessionsList.SetFocus();
+        workspace.PressWithDialog(Key.F8, dialog =>
+        {
+            Assert.Equal("Close session", dialog.Title);
+            dialog.Buttons.Single(button => button.Text == "Close").SetFocus();
+            dialog.NewKeyDownEvent(Key.Enter);
+        });
+
+        Assert.Empty(SessionManager.Load(workspace.StatePath).Sessions);
+        Assert.Null(workspace.Grid.Session);
+        Assert.True(File.Exists(workspace.FilePath));
+        Assert.True(File.Exists(workspace.NestedFilePath));
+        if (running)
+        {
+            Assert.False(terminal!.IsRunning);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PaletteCloseAlsoRequiresConfirmation(bool confirm)
+    {
+        using var workspace = new TestWorkspace();
+        workspace.RunWithDialog(() => workspace.Screen.ExecuteCommand("close"), dialog =>
+        {
+            Assert.Equal("Close session", dialog.Title);
+            if (confirm)
+            {
+                dialog.Buttons.Single(button => button.Text == "Close").SetFocus();
+            }
+
+            dialog.NewKeyDownEvent(Key.Enter);
+        });
+
+        Assert.Equal(confirm ? 0 : 1, SessionManager.Load(workspace.StatePath).Sessions.Count);
+        Assert.True(File.Exists(workspace.FilePath));
     }
 
     [Theory]
@@ -293,6 +386,9 @@ public class CommanderKeyTests
         }
 
         internal void PressWithDialog(Key key, Action<Dialog> respond)
+            => RunWithDialog(() => Assert.True(_window.NewKeyDownEvent(key)), respond);
+
+        internal void RunWithDialog(Action action, Action<Dialog> respond)
         {
             bool seen = false;
             object timeout = App.AddTimeout(TimeSpan.FromMilliseconds(1), () =>
@@ -304,7 +400,7 @@ public class CommanderKeyTests
             })!;
             try
             {
-                Assert.True(_window.NewKeyDownEvent(key));
+                action();
                 Assert.True(seen, "Expected a confirmation or rename dialog.");
             }
             finally

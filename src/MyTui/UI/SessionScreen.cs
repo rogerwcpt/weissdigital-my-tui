@@ -61,21 +61,25 @@ internal sealed class SessionScreen : IDisposable
     private int _scriptVersion;
 
     /// <summary>Selected session row, with a close mark in the last column.</summary>
-    internal static string ActiveRow(string label, int width)
+    internal static string ActiveRow(string label, int width) => SessionRow(label, width, active: true);
+
+    /// <summary>Keep the busy pulse aligned just before the reserved close column.</summary>
+    internal static string SessionRow(string label, int width, bool active, char? pulse = null)
     {
-        if (width < 2)
+        if (width < 2 || (!active && pulse is null))
         {
             return label;
         }
 
-        var runes = label.EnumerateRunes().ToList();
-        if (runes.Count >= width)
+        string suffix = active ? "\u00d7" : " ";
+        if (pulse is { } glyph && width >= 3)
         {
-            runes = runes.Take(width - 1).ToList();
+            suffix = glyph + " " + suffix;
         }
 
-        int spaces = width - 1 - runes.Count;
-        return string.Concat(runes) + new string(' ', spaces) + "\u00d7";
+        var runes = label.EnumerateRunes().Take(width - suffix.Length).ToList();
+        int spaces = width - suffix.Length - runes.Count;
+        return string.Concat(runes) + new string(' ', spaces) + suffix;
     }
 
     /// <summary>Session list text, with a 1-based number in front of the name.</summary>
@@ -713,7 +717,7 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        if ((session.IsRunning || session.Script?.IsRunning == true) && !ConfirmClose(session.Name))
+        if (!ConfirmClose(session))
         {
             return;
         }
@@ -1207,12 +1211,12 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
-    private bool ConfirmClose(string name)
+    private bool ConfirmClose(Session session)
     {
         HoldModal();
         try
         {
-            return CloseDialog.Confirm(_app, name);
+            return CloseDialog.Confirm(_app, session.Name, session.IsRunning || session.Script?.IsRunning == true);
         }
         finally
         {
@@ -2168,13 +2172,15 @@ internal sealed class SessionScreen : IDisposable
 
     private string RowText(Session session, int index)
     {
-        string label = Numbered(Spinner.Mark(session.ListLabel, session.IsBusy, Environment.TickCount64), index);
-        if (_manager is null || index != _manager.FocusedIndex)
+        string label = Numbered(session.ListLabel, index);
+        bool active = _manager is not null && index == _manager.FocusedIndex;
+        if (!active)
         {
-            return ActivityLabel(label, _unseen.Contains(session), _rang.Contains(session));
+            label = ActivityLabel(label, _unseen.Contains(session), _rang.Contains(session));
         }
 
-        return ActiveRow(label, _list.Viewport.Width);
+        return SessionRow(label, _list.Viewport.Width, active,
+            session.IsBusy ? Spinner.Glyph(Environment.TickCount64) : null);
     }
 
     private void SyncLabel(int index)
@@ -2191,11 +2197,13 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
+    /// <summary>
+    /// The content frame title is the session name. Animating it redraws the Files tab,
+    /// so the busy cursor pulse stays on the session row.
+    /// </summary>
     private void RefreshWindowTitle()
     {
-        string title = _manager?.Focused is Session session
-            ? Spinner.Mark(session.WindowTitle, session.IsBusy, Environment.TickCount64)
-            : "Session";
+        string title = _manager?.Focused is Session session ? session.WindowTitle : "Session";
         if (Content.Title != title)
         {
             Content.Title = title;
@@ -2280,8 +2288,6 @@ internal sealed class SessionScreen : IDisposable
         {
             SyncLabel(i);
         }
-
-        RefreshWindowTitle();
 
         if (_manager.Focused is { ShowingScriptOutput: true, Script: { } script }
             && ReferenceEquals(script, _shownScript) && _preview.Visible)

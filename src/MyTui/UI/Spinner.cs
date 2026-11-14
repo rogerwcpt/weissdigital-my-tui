@@ -1,15 +1,15 @@
 namespace MyTui.UI;
 
 /// <summary>
-/// One-cell spinner for a session that is executing a command.
-/// Frames advance on wall time, so a 30 Hz tick and a faster loop show the same motion.
+/// One-cell cursor pulse before the close column in the Sessions list.
+/// Frames advance on wall time, so the pulse stays slow regardless of the loop rate.
 /// </summary>
 internal static class Spinner
 {
-    /// <summary>A line turning clockwise. Each frame is one column.</summary>
-    internal const string Frames = "|/-\\";
+    /// <summary>An underline, half-height block, filled cursor, then half-height block. Each frame is one column.</summary>
+    internal const string Frames = "▁▄█▄";
 
-    internal const long FrameMilliseconds = 120;
+    internal const long FrameMilliseconds = 700;
 
     internal static char Glyph(long now)
     {
