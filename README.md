@@ -36,7 +36,7 @@ The release archive is the other route. Download `my-tui-<version>-osx-arm64.tar
 dotnet run --project src/MyTui
 ```
 
-F9 or Cmd+K opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. Cmd+K reaches my-tui only when the host terminal forwards it. Ghostty binds Cmd+K to clear the screen by default; `keybind = cmd+k=unbind` in the Ghostty config lets my-tui see that key. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running. A session that is executing a command shows a slow cursor pulse, cycling through `▁ → ▄ → █ → ▄` every 700 ms, right-aligned just before the close × in the Sessions list. The quit question names that session. F1 hides or shows the Sessions panel. F12 hides or shows the center panel.
+F9 or Cmd+K opens the Command Palette, where you will find all the commands in one list, grouped by area. Type to filter, then press Enter to run the selected command. It works even while a terminal session is running. Cmd+K reaches my-tui only when the host terminal forwards it. Ghostty binds Cmd+K to clear the screen by default; `keybind = cmd+k=unbind` in the Ghostty config lets my-tui see that key. F10 quits my-tui, Norton Commander-style, asking first if any terminal session or script is running. A session that is executing a command shows a slow cursor pulse, cycling through `▁ → ▄ → █ → ▄` every 700 ms, right-aligned just before the close × in the Sessions list. The quit question names that session. F1 hides or shows the Sessions panel. F2 hides or shows the Terminal tab. F3 hides or shows the Files tab. F4 hides or shows Preview.
 
 ### Commands
 
@@ -45,18 +45,22 @@ Host terminals and agent CLIs swallow most key chords, so most commands are in t
 | Key | Sessions panel focused | Files panel focused | Terminal or Preview focused |
 | --- | --- | --- | --- |
 | F1 | Toggle Sessions Panel | Toggle Sessions Panel | Toggle Sessions Panel |
-| F3 | Toggle Preview | Toggle Preview | Toggle Preview |
-| F6 | Rename the selected session | Rename the selected file or folder | Leave the key to the focused view/program |
+| F2 | Toggle Terminal Panel | Toggle Terminal Panel | Toggle Terminal Panel |
+| F3 | Toggle Files Panel | Toggle Files Panel | Toggle Files Panel |
+| F4 | Toggle Preview | Toggle Preview | Toggle Preview |
+| F5 | Duplicate the selected session | Copy the selected file or folder | Leave the key to the focused view/program |
+| F6 | Leave the key to the session list | Move the selected file or folder | Leave the key to the focused view/program |
 | F7 | Leave the key to the session list | Create a folder | Leave the key to the focused view/program |
 | F8 | Remove the selected session, after confirmation | Delete the selected file or folder, after confirmation | Leave the key to the focused view/program |
 | F9 | Command Palette | Command Palette | Command Palette |
 | Cmd+K | Command Palette | Command Palette | Command Palette |
 | F10 | Quit my-tui | Quit my-tui | Quit my-tui |
-| F12 | Toggle Center Panel | Toggle Center Panel | Toggle Center Panel |
+| F11 | Maximize or restore the focused panel | Maximize or restore the focused panel | Maximize or restore the focused panel |
+| F12 | Restore layout | Restore layout | Restore layout |
 | Ctrl+Option+1 … 9 | Focus sessions 1–9 | Focus sessions 1–9 | Focus sessions 1–9 |
 | Ctrl+Option+0 | Focus session 10 | Focus session 10 | Focus session 10 |
 
-F6, F7, and F8 follow keyboard focus, not just the selected tab. Removing a session always asks for confirmation and does not delete its files; running sessions or scripts are stopped only after confirmation. File deletion is permanent (not Trash), and deleting a folder includes its contents. Both confirmations default to **Cancel**; Escape also cancels. Renaming does not overwrite existing files or folders. F7 asks for a folder name. The new folder is created inside the selected folder, or in the same folder as the selected file. With nothing selected, it is created in the session directory. An existing file or folder is left in place. Escape cancels.
+F2 shows the Terminal tab, and hides the center panel when that tab is already showing. F3 does the same for the Files tab. F4 toggles Preview. F11 maximizes the focused panel, or restores it when that panel is already maximized. F12 returns to the default layout: Sessions and the center panel visible, Preview closed, and Sessions at its default width. These keys work from any panel, including a running terminal. F5, F6, F7, and F8 follow keyboard focus, not just the selected tab. F5 duplicates the session while Sessions has focus. While Files has focus, F5 copies the selected file or folder and F6 moves it. Both ask for a destination folder inside the session directory. Escape cancels. An existing name is left in place, and a folder is not copied or moved into itself. Removing a session always asks for confirmation and does not delete its files; running sessions or scripts are stopped only after confirmation. File deletion is permanent (not Trash), and deleting a folder includes its contents. Both confirmations default to **Cancel**; Escape also cancels. Renaming, from the Command Palette, does not overwrite existing files or folders. F7 asks for a folder name. The new folder is created inside the selected folder, or in the same folder as the selected file. With nothing selected, it is created in the session directory. An existing file or folder is left in place. Escape cancels.
 
 The session list shows a number in front of each name. Ctrl+Option and that number focus the session from any panel, including a running terminal. Ctrl+Option+1 focuses session 1, through Ctrl+Option+9 for session 9. Ctrl+Option+0 focuses session 10. Sessions after 10 keep their numbers. Alt+Up and Alt+Down reorder the list, which changes which session a number focuses. Command+number stays with the host terminal's own tabs. Ghostty and iTerm deliver Ctrl+Option+number through the keyboard protocol Terminal.Gui turns on. Option is the Alt key.
 
@@ -66,25 +70,31 @@ F9 lists every session under **Go to**, with the same number and, for the first 
 | --- | --- | --- |
 | Go to | Session name (Ctrl+Option+number) | Focus that session and close the palette. 1–9 and 0 do this while the filter is empty. |
 | Session | Close the session (F8 in Sessions) | Close the selected session after confirmation, stopping its terminal or script if running. |
-| Session | Duplicate session | Start a fresh copy of the selected session. |
+| Session | Duplicate session (F5 in Sessions) | Start a fresh copy of the selected session. |
+| Session | Run the selected text in a duplicate session | Start a fresh copy of the selected session and send the selected text to it, so a shell runs it. |
 | Session | Edit the session | Edit the selected session's settings. |
 | Session | Force stop terminal | Forcefully terminate the selected terminal after confirmation, keeping the session so it can be restarted. |
 | Session | New session | Create a session. The command defaults to `$SHELL` and can be edited before starting. |
 | Session | Open folder | Choose a folder and start a new shell session there. |
-| Session | Rename the session (F6 in Sessions) | Change the selected session's name. |
+| Session | Refresh Terminal Output | Redraw the terminal my-tui already has. A program waiting at a prompt has sent nothing new, and this still paints that screen. The program's input is left alone. |
+| Session | Rename the session | Change the selected session's name. |
 | Session | Sort Sessions by Name | Sort sessions alphabetically, keeping the selected session and saving the order. |
 | Session | Start the session | Start a stopped session. Enter in the session list does the same. |
 | Session | Templates | Apply a saved template in the new-session dialog. |
-| Layout | Maximize/Restore | Maximize the focused panel or undo its maximization. |
-| Layout | Restore layout | Return to the default layout: Sessions and the center panel visible, Preview closed, and Sessions at its default width. |
+| Layout | Maximize/Restore (F11) | Maximize the focused panel or undo its maximization. |
+| Layout | Restore layout (F12) | Return to the default layout: Sessions and the center panel visible, Preview closed, and Sessions at its default width. |
 | Layout | Show Files | Show and focus the Files tab; restore the default layout first if Sessions or Preview is maximized. |
 | Layout | Show Terminal | Show and focus the Terminal tab; restore the default layout first if Sessions or Preview is maximized. |
-| Layout | Toggle Center Panel (F12) | Hide or show the session's center area containing Terminal and Files. |
-| Layout | Toggle Preview Panel (F3) | Toggle the preview panel on the right; it stays open while you use the terminal. |
+| Layout | Toggle Center Panel | Hide or show the session's center area containing Terminal and Files. |
+| Layout | Toggle Files Panel (F3) | Show the Files tab, or hide the center panel when Files is already showing. |
+| Layout | Toggle Preview Panel (F4) | Toggle the preview panel on the right; it stays open while you use the terminal. |
+| Layout | Toggle Terminal Panel (F2) | Show the Terminal tab, or hide the center panel when Terminal is already showing. |
 | Layout | Toggle Sessions Panel (F1) | Hide or show the session list. |
+| Files | Copy selected file or folder (F5 in Files) | Copy the selected item into a folder you choose inside the session directory. |
 | Files | Create folder (F7 in Files) | Create a folder inside the selected folder, or beside the selected file. |
 | Files | Delete selected file or folder (F8 in Files) | Permanently delete the selected item after confirmation. Folders include all contents. |
-| Files | Rename selected file or folder (F6 in Files) | Rename the selected item in place without overwriting an existing item. |
+| Files | Move selected file or folder (F6 in Files) | Move the selected item into a folder you choose inside the session directory. |
+| Files | Rename selected file or folder | Rename the selected item in place without overwriting an existing item. |
 | Files | Open selected file | Open the selected file in its system-default application while Files is active. |
 | Files | Refresh Files | Refresh the file tree. |
 | Files | Reveal in Finder / Reveal in File Manager | Reveal the selected file or folder in Files, or open the session folder when Terminal is active. |
@@ -97,7 +107,7 @@ F9 lists every session under **Go to**, with the same number and, for the first 
 | App | Quit (F10) | Quit my-tui, asking first if any terminal session or script is running. Sessions executing a command are named in the question. |
 | App | Theme | Choose and save the UI theme. |
 
-Drag in a preview to select text; releasing copies it, as in the terminal. Double-click selects a word and triple-click a line in plain-text previews. In plain-text previews, Ctrl+A selects all and Shift+Left/Right extends the selection. Previews are read-only: Ctrl+Shift+V pastes into the session's terminal, not the file.
+Drag in a preview to select text; releasing copies it, as in the terminal. The copy mark on a code block copies that block. Either one shows Copied. Double-click selects a word and triple-click a line in plain-text previews. In plain-text previews, Ctrl+A selects all and Shift+Left/Right extends the selection. Previews are read-only: Ctrl+Shift+V pastes into the session's terminal, not the file.
 
 Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, and it is saved for the next launch. Restore layout returns Sessions to its default width. Both panels keep a minimum width, and the terminal resizes to fit.
 
@@ -110,6 +120,8 @@ Escape cancels the **Open Folder** dialog without creating a session.
 A session you are not viewing shows ● after new output and ! after a bell. Sessions are restored from `~/.config/my-tui/state.json` but are not started automatically; select one and press Enter. Templates are stored in `~/.config/my-tui/templates.json`.
 
 Open the command palette with F9 and choose **Duplicate session** to immediately start a fresh terminal using the selected session’s folder, command, arguments, and environment. The copy is named `<original>-2`, then `-3`, and so on, skipping names already in use. The original session keeps running unchanged.
+
+**Run the selected text in a duplicate session** does the same, then types the selected text into the copy and presses Enter. Select the text in the terminal or in Preview first. The selection can be a single command or several lines. The original session is left as it was.
 
 While Files is active, open the command palette with F9 and choose **Open selected file** to launch the selected file in its system-default application (`open` on macOS, `xdg-open` on Linux). Select a file rather than a folder.
 

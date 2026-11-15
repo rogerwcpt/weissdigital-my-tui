@@ -6,6 +6,7 @@ using MyTui.Terminal;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using TuiAttribute = Terminal.Gui.Drawing.Attribute;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -36,6 +37,7 @@ internal sealed class SessionScreen : IDisposable
     private readonly PreviewMarkdown _markdown;
     private readonly PreviewTextView _text;
     private readonly Label _note;
+    private readonly Label _copyToast;
     private readonly Label _hint;
     private readonly Label _commands;
     private readonly FramePacer _pacer = new();
@@ -157,6 +159,11 @@ internal sealed class SessionScreen : IDisposable
                 key.Handled = true;
             }
         };
+        // Mouse is installed by Init, which runs before this screen is created.
+        if (_app.Mouse is { } mouse)
+        {
+            mouse.MouseEvent += OnAppMouse;
+        }
         _grid = new CellGridView(HandleChord, StartFocused, CopyText, OpenLink);
         _hint = new Label
         {
@@ -229,6 +236,18 @@ internal sealed class SessionScreen : IDisposable
             Visible = true,
             Text = "Select a file.",
         };
+        _note.Padding.Thickness = new Thickness(PreviewMarkdown.Inset);
+        _copyToast = new Label
+        {
+            X = 1,
+            Y = Pos.AnchorEnd(1),
+            Width = 8,
+            Height = 1,
+            CanFocus = false,
+            Visible = false,
+            Text = " Copied ",
+        };
+        ApplyCopyToastScheme();
         _filesNote = new Label
         {
             X = 0,
@@ -256,7 +275,7 @@ internal sealed class SessionScreen : IDisposable
         // cells it still has cached. A parent clear has to schedule a full paint first.
         _terminal.ClearingViewport += (_, _) => _grid.Repaint();
         _files.Add(_tree, _filesNote);
-        _preview.Add(_markdown, _text, _note);
+        _preview.Add(_markdown, _text, _note, _copyToast);
         Wire(_markdown);
         Wire(_text);
         Wire(_preview);
@@ -313,6 +332,7 @@ internal sealed class SessionScreen : IDisposable
             CanFocus = false,
             Text = CommandPalette.Footer,
         };
+        _commands.ViewportChanged += (_, _) => PaintFooter();
         Sessions.Add(_list, new PaletteRule(), _commands);
         Content = new FrameView
         {
@@ -414,14 +434,46 @@ internal sealed class SessionScreen : IDisposable
             case AppCommand.Menu:
                 ShowPalette();
                 break;
-            case AppCommand.Center:
-                ToggleContent();
-                break;
             case AppCommand.Sessions:
                 ToggleSessions();
                 break;
+            case AppCommand.Terminal:
+                ToggleTab(SessionTab.Terminal);
+                break;
+            case AppCommand.Files:
+                ToggleTab(SessionTab.Files);
+                break;
             case AppCommand.Preview:
                 TogglePreview();
+                break;
+            case AppCommand.Duplicate:
+                // F5 duplicates the focused session, or copies a file while Files has focus.
+                if (inTerminal)
+                {
+                    return false;
+                }
+
+                if (_list.HasFocus)
+                {
+                    DuplicateSession();
+                }
+                else if (FilesActive && _files.HasFocus)
+                {
+                    PlaceSelected(move: false);
+                }
+                else
+                {
+                    return false;
+                }
+
+                break;
+            case AppCommand.Move:
+                if (inTerminal || !FilesActive || !_files.HasFocus)
+                {
+                    return false;
+                }
+
+                PlaceSelected(move: true);
                 break;
             case AppCommand.CreateFolder:
                 // F7 makes a folder only while Files has focus, as in Norton Commander.
@@ -432,9 +484,8 @@ internal sealed class SessionScreen : IDisposable
 
                 CreateSelectedFolder();
                 break;
-            case AppCommand.Rename:
             case AppCommand.Delete:
-                // Do not steal these keys from terminal programs or act on a panel behind Preview.
+                // Do not steal this key from terminal programs or act on a panel behind Preview.
                 if (inTerminal)
                 {
                     return false;
@@ -442,25 +493,11 @@ internal sealed class SessionScreen : IDisposable
 
                 if (_list.HasFocus)
                 {
-                    if (command == AppCommand.Rename)
-                    {
-                        RenameSession();
-                    }
-                    else
-                    {
-                        CloseSelected();
-                    }
+                    CloseSelected();
                 }
                 else if (FilesActive && _files.HasFocus)
                 {
-                    if (command == AppCommand.Rename)
-                    {
-                        RenameSelectedFile();
-                    }
-                    else
-                    {
-                        DeleteSelectedFile();
-                    }
+                    DeleteSelectedFile();
                 }
                 else
                 {
@@ -470,6 +507,12 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case AppCommand.Quit:
                 RequestQuit();
+                break;
+            case AppCommand.Maximize:
+                ToggleMaximize(PanelUnderFocus());
+                break;
+            case AppCommand.Restore:
+                RestoreLayout();
                 break;
             case AppCommand.Copy:
                 CopyVisible();
@@ -529,6 +572,66 @@ internal sealed class SessionScreen : IDisposable
         ShowSession(_manager.FocusedIndex);
         OpenFocused();
     }
+
+    /// <summary>Starts a copy of the focused session and sends the current selection to it as a command.</summary>
+    private void RunSelectionInDuplicate()
+    {
+        if (_modal || _manager?.Focused is not Session source)
+        {
+            return;
+        }
+
+        // Read the selection before the new session replaces the preview and the terminal.
+        string? selected = SelectedRunText();
+        if (TerminalSession.SubmittedText(selected) is null)
+        {
+            Note("Select text to run");
+            return;
+        }
+
+        Session copy = _manager.Duplicate(source);
+        RefreshLabels();
+        ShowSession(_manager.FocusedIndex);
+        OpenFocused();
+        if (copy.Terminal is not { } terminal || !copy.IsRunning)
+        {
+            Note(string.IsNullOrEmpty(copy.StartError) ? "Could not start the session" : copy.StartError);
+            return;
+        }
+
+        terminal.Submit(selected);
+        Note("Running in " + copy.Name);
+    }
+
+    /// <summary>Selected text from the focused view, or from the terminal or preview if focus is elsewhere.</summary>
+    private string? SelectedRunText()
+    {
+        string? preview = null;
+        if (_text.Visible && _text.SelectedText.Length > 0)
+        {
+            preview = _text.SelectedText;
+        }
+        else if (_markdown.Visible && _markdown.SelectedText is { Length: > 0 } markdown)
+        {
+            preview = markdown;
+        }
+
+        string? terminal = _grid.SelectionText();
+        if (PreviewHasFocus())
+        {
+            return FirstText(preview, terminal);
+        }
+
+        if (_grid.HasFocus)
+        {
+            return FirstText(terminal, preview);
+        }
+
+        return FirstText(terminal, preview);
+    }
+
+    private static string? FirstText(string? preferred, string? other) =>
+        !string.IsNullOrWhiteSpace(preferred) ? preferred : !string.IsNullOrWhiteSpace(other) ? other : null;
 
     internal void OpenFolder()
     {
@@ -866,6 +969,11 @@ internal sealed class SessionScreen : IDisposable
 
         _disposed = true;
         _sessionSplitter.Dispose();
+        if (_app.Mouse is { } mouse)
+        {
+            mouse.MouseEvent -= OnAppMouse;
+        }
+
         _app.Iteration -= OnIteration;
         if (_timeout is not null)
         {
@@ -943,6 +1051,7 @@ internal sealed class SessionScreen : IDisposable
 
         ApplyScheme(_markdown, HostTheme.Preview());
         ApplyScheme(_text, HostTheme.Preview());
+        ApplyCopyToastScheme();
         _window?.SetNeedsDraw();
         _grid.Repaint();
     }
@@ -1025,7 +1134,7 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        _commands.Text = CommandPalette.Footer;
+        PaintFooter(force: true);
         HoldModal();
         string? id;
         try
@@ -1058,6 +1167,9 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case "duplicate":
                 DuplicateSession();
+                break;
+            case "run-selection":
+                RunSelectionInDuplicate();
                 break;
             case "start":
                 OpenFocused();
@@ -1098,6 +1210,18 @@ internal sealed class SessionScreen : IDisposable
             case "center":
                 ToggleContent();
                 break;
+            case "toggle-terminal":
+                ToggleTab(SessionTab.Terminal);
+                break;
+            case "toggle-files":
+                ToggleTab(SessionTab.Files);
+                break;
+            case "copy-file":
+                PlaceSelected(move: false);
+                break;
+            case "move-file":
+                PlaceSelected(move: true);
+                break;
             case "restore":
                 RestoreLayout();
                 break;
@@ -1124,6 +1248,9 @@ internal sealed class SessionScreen : IDisposable
                 break;
             case "refresh":
                 RefreshFiles();
+                break;
+            case "refresh-terminal":
+                RefreshTerminal();
                 break;
             case "templates":
                 Templates();
@@ -1258,11 +1385,23 @@ internal sealed class SessionScreen : IDisposable
 
         if (_app.Clipboard?.TrySetClipboardData(text) == true)
         {
-            Note("Copied");
+            Note("Copied", previewToast: PreviewHasFocus());
         }
         else
         {
             Note("Could not access the clipboard");
+        }
+    }
+
+    /// <summary>
+    /// The code-block copy mark copies on its own and does not come through <see cref="CopyText"/>.
+    /// Leave the click unhandled so the block still performs the copy.
+    /// </summary>
+    private void OnAppMouse(object? sender, Mouse mouse)
+    {
+        if (!mouse.Handled && PreviewMarkdown.IsCodeCopyClick(mouse))
+        {
+            Note("Copied", previewToast: true);
         }
     }
 
@@ -1437,6 +1576,55 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
+    private void PlaceSelected(bool move)
+    {
+        if (!FilesActive || _modal || _manager?.Focused is not Session session
+            || _tree.SelectedObject is not FileNode selected)
+        {
+            Note("Select a file or folder.");
+            return;
+        }
+
+        string start = Path.GetDirectoryName(selected.Path) ?? session.Cwd;
+        if (!Workspace.IsInside(session.Cwd, start) || !Directory.Exists(start))
+        {
+            start = session.Cwd;
+        }
+
+        HoldModal();
+        string? destination;
+        try
+        {
+            destination = FolderDialog.Ask(_app, start, move ? "Move to" : "Copy to");
+        }
+        finally
+        {
+            ReleaseModal();
+        }
+
+        if (string.IsNullOrEmpty(destination))
+        {
+            return;
+        }
+
+        try
+        {
+            string target = move
+                ? WorkspaceFiles.Move(session.Cwd, selected.Path, destination)
+                : WorkspaceFiles.Copy(session.Cwd, selected.Path, destination);
+            session.SelectedPath = target;
+            session.ShowingScriptOutput = false;
+            RefreshFiles();
+            FocusPane();
+            string where = Path.GetFileName(destination.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            Note((move ? "Moved into " : "Copied into ") + (string.IsNullOrEmpty(where) ? "the session folder" : where));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Note((move ? "Could not move: " : "Could not copy: ") + ex.Message);
+        }
+    }
+
     private void RunSelectedScript()
     {
         if (!FilesActive || _modal || _manager?.Focused is not Session session)
@@ -1529,11 +1717,47 @@ internal sealed class SessionScreen : IDisposable
         Note("Could not open the link");
     }
 
-    private void Note(string text)
+    private void Note(string text, bool previewToast = false)
     {
         _statusNote = text;
         _statusUntil = Environment.TickCount64 + 2500;
         _commands.Text = text;
+        _copyToast.Visible = previewToast && _preview.Visible;
+    }
+
+    private void ApplyCopyToastScheme()
+    {
+        TuiAttribute ink = HostTheme.Preview().Highlight;
+        _copyToast.SetScheme(new Scheme
+        {
+            Normal = ink,
+            HotNormal = ink,
+            Focus = ink,
+            HotFocus = ink,
+            Active = ink,
+            HotActive = ink,
+            Highlight = ink,
+            Disabled = ink,
+        });
+    }
+
+    private void PaintFooter(bool force = false)
+    {
+        if (!force && _statusUntil != 0 && Environment.TickCount64 < _statusUntil)
+        {
+            return;
+        }
+
+        if (force)
+        {
+            _statusUntil = 0;
+        }
+
+        string bar = CommandPalette.FormatFooter(_commands.Viewport.Width);
+        if (!string.Equals(_commands.Text?.ToString(), bar, StringComparison.Ordinal))
+        {
+            _commands.Text = bar;
+        }
     }
 
     private void PasteClipboard()
@@ -1762,6 +1986,18 @@ internal sealed class SessionScreen : IDisposable
         }
     }
 
+    private void ToggleTab(SessionTab tab)
+    {
+        WorkspaceLayout layout = WorkspaceLayout.Compute(_sessionsHidden, _contentHidden, _previewOpen, _maximized);
+        if (layout.TabsVisible && _manager?.Focused?.Tab == tab)
+        {
+            MinimizeContent();
+            return;
+        }
+
+        ShowTab(tab);
+    }
+
     private void ToggleContent()
     {
         WorkspaceLayout layout = WorkspaceLayout.Compute(_sessionsHidden, _contentHidden, _previewOpen, _maximized);
@@ -1775,6 +2011,22 @@ internal sealed class SessionScreen : IDisposable
         _maximized = MaximizedPanel.None;
         ApplyLayout();
         FocusPane();
+    }
+
+    /// <summary>
+    /// Redraw the terminal my-tui already has. An idle program sends nothing new, so the
+    /// grid has to be asked. Hidden output is brought back on screen first.
+    /// </summary>
+    private void RefreshTerminal()
+    {
+        WorkspaceLayout layout = WorkspaceLayout.Compute(_sessionsHidden, _contentHidden, _previewOpen, _maximized);
+        if (layout.TabsVisible && _manager?.Focused?.Tab == SessionTab.Terminal)
+        {
+            _grid.Repaint();
+            return;
+        }
+
+        ShowTab(SessionTab.Terminal);
     }
 
     private void ShowTab(SessionTab tab)
@@ -2278,9 +2530,10 @@ internal sealed class SessionScreen : IDisposable
         if (_statusUntil != 0 && Environment.TickCount64 >= _statusUntil)
         {
             _statusUntil = 0;
+            _copyToast.Visible = false;
             if (_commands.Text == _statusNote)
             {
-                _commands.Text = CommandPalette.Footer;
+                PaintFooter();
             }
         }
 

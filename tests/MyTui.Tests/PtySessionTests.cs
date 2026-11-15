@@ -84,6 +84,107 @@ public class PtySessionTests
     }
 
     [UnixFact(Timeout = 15000)]
+    public async Task CtrlC_InterruptsForegroundSleepInZsh()
+    {
+        PtySession? session = null;
+        try
+        {
+            session = PtySession.Start("/bin/zsh", ["/bin/zsh", "-f", "-i"], 80, 24, CleanEnv());
+            session.StartReading();
+            var got = new StringBuilder();
+            session.Output += bytes =>
+            {
+                lock (got)
+                {
+                    got.Append(Encoding.UTF8.GetString(bytes));
+                }
+            };
+            Assert.True(WaitUntil(() =>
+            {
+                lock (got)
+                {
+                    string text = got.ToString();
+                    return text.Contains('%') || text.Contains('#') || text.Contains('$');
+                }
+            }, TimeSpan.FromSeconds(3)));
+            session.Write("sleep 30\n"u8);
+            Assert.True(WaitUntil(() => session.IsBusy, TimeSpan.FromSeconds(3)));
+            Thread.Sleep(250);
+            session.Write([0x03]);
+            string text = "";
+            Assert.True(WaitUntil(() =>
+            {
+                lock (got)
+                {
+                    text = got.ToString();
+                }
+
+                return !session.IsBusy;
+            }, TimeSpan.FromSeconds(3)), text);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [UnixFact(Timeout = 15000)]
+    public async Task CtrlC_AbortsAnInteractiveCommandAndThePromptLine()
+    {
+        PtySession? session = null;
+        try
+        {
+            session = PtySession.Start("/bin/zsh", ["/bin/zsh", "-f", "-i"], 80, 24, CleanEnv());
+            session.StartReading();
+            var got = new StringBuilder();
+            session.Output += bytes =>
+            {
+                lock (got)
+                {
+                    got.Append(Encoding.UTF8.GetString(bytes));
+                }
+            };
+            Assert.True(WaitUntil(() =>
+            {
+                lock (got)
+                {
+                    string text = got.ToString();
+                    return text.Contains('#') || text.Contains('$') || text.Contains('%');
+                }
+            }, TimeSpan.FromSeconds(3)));
+
+            session.Write("echo LEFT"u8);
+            session.Write([0x03]);
+            Thread.Sleep(300);
+            session.Write("echo AFTER\n"u8);
+            bool after = WaitUntil(() =>
+            {
+                lock (got)
+                {
+                    return got.ToString().Contains("AFTER");
+                }
+            }, TimeSpan.FromSeconds(3));
+            string text;
+            lock (got)
+            {
+                text = got.ToString();
+            }
+
+            Assert.True(after, text);
+            Assert.DoesNotContain("\nLEFT", text.Replace("\r\n", "\n"));
+            Assert.Contains("AFTER", text);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [UnixFact(Timeout = 15000)]
     public async Task InteractiveShellIsBusyOnlyWhileACommandRuns()
     {
         PtySession? session = null;

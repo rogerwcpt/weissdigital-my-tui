@@ -13,12 +13,36 @@ namespace MyTui.Tests;
 public class CommanderKeyTests
 {
     [Fact]
-    public void F6AndF8TargetSessionsEvenWhenTheFilesTabIsSelected()
+    public void F5DuplicatesTheFocusedSessionAndF8ClosesIt()
     {
         using var workspace = new TestWorkspace();
         workspace.Screen.ExecuteCommand("files");
         workspace.SessionsList.SetFocus();
-        workspace.PressWithDialog(Key.F6, dialog =>
+        Assert.False(workspace.Screen.HandleChord(Key.F6));
+        Assert.False(workspace.Screen.HandleChord(Key.F7));
+        Assert.False(Directory.Exists(Path.Combine(Path.GetDirectoryName(workspace.FilePath)!, "not-created")));
+        Assert.True(workspace.Screen.HandleChord(Key.F5));
+        Assert.Equal("test session-2", SessionManager.Load(workspace.StatePath).Focused!.Name);
+        Assert.Equal(2, SessionManager.Load(workspace.StatePath).Sessions.Count);
+        Assert.True(File.Exists(workspace.FilePath));
+        workspace.SessionsList.SetFocus();
+        workspace.PressWithDialog(Key.F8, dialog =>
+        {
+            Assert.Equal("Close session", dialog.Title);
+            ((Dialog)dialog).Result = 1;
+            workspace.App.RequestStop((IRunnable)dialog);
+        });
+        Assert.Single(SessionManager.Load(workspace.StatePath).Sessions);
+        Assert.Equal("test session", SessionManager.Load(workspace.StatePath).Sessions[0].Name);
+        Assert.True(File.Exists(workspace.FilePath));
+    }
+
+    [Fact]
+    public void RenameStaysInThePalette()
+    {
+        using var workspace = new TestWorkspace();
+        workspace.SessionsList.SetFocus();
+        workspace.RunWithDialog(() => workspace.Screen.ExecuteCommand("rename"), dialog =>
         {
             Assert.Equal("Rename session", dialog.Title);
             dialog.SubViews.OfType<TextField>().Single().Text = "renamed session";
@@ -26,29 +50,17 @@ public class CommanderKeyTests
         });
 
         Assert.Equal("renamed session", SessionManager.Load(workspace.StatePath).Focused!.Name);
-        Assert.True(File.Exists(workspace.FilePath));
-        workspace.SessionsList.SetFocus();
-        Assert.False(workspace.Screen.HandleChord(Key.F7));
-        Assert.False(Directory.Exists(Path.Combine(Path.GetDirectoryName(workspace.FilePath)!, "not-created")));
-        workspace.PressWithDialog(Key.F8, dialog =>
-        {
-            Assert.Equal("Close session", dialog.Title);
-            dialog.Result = 1;
-            workspace.App.RequestStop(dialog);
-        });
-        Assert.Empty(SessionManager.Load(workspace.StatePath).Sessions);
-        Assert.True(File.Exists(workspace.FilePath));
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void F6RenamesFilesAndNestedFilesAndKeepsTheSelection(bool nested)
+    public void PaletteRenamesFilesAndNestedFilesAndKeepsTheSelection(bool nested)
     {
         using var workspace = new TestWorkspace();
         string source = nested ? workspace.NestedFilePath : workspace.FilePath;
         workspace.Select(source);
-        workspace.PressWithDialog(Key.F6, dialog =>
+        workspace.RunWithDialog(() => workspace.Screen.ExecuteCommand("rename-file"), dialog =>
         {
             Assert.Equal("Rename file", dialog.Title);
             dialog.SubViews.OfType<TextField>().Single().Text = "renamed.txt";
@@ -62,6 +74,42 @@ public class CommanderKeyTests
         Assert.Equal("test session", SessionManager.Load(workspace.StatePath).Focused!.Name);
         Assert.True(workspace.Tree.HasFocus);
         Assert.Equal("preview text", workspace.Text.Content);
+    }
+
+    [Fact]
+    public void F5CopiesAFileIntoAChosenFolderAndF6MovesIt()
+    {
+        using var workspace = new TestWorkspace();
+        string destination = Directory.CreateDirectory(Path.Combine(workspace.Root, "dest")).FullName;
+        string parked = Directory.CreateDirectory(Path.Combine(workspace.Root, "parked")).FullName;
+        workspace.Select(workspace.FilePath);
+
+        workspace.PressWithDialog(Key.F5, dialog =>
+        {
+            Assert.Equal("Copy to", dialog.Title);
+            var open = Assert.IsType<OpenDialog>(dialog);
+            open.Path = destination;
+            open.Result = new[] { destination };
+            workspace.App.RequestStop(open);
+        });
+
+        string copied = Path.Combine(destination, "notes.txt");
+        Assert.Equal("preview text", File.ReadAllText(copied));
+        Assert.Equal("preview text", File.ReadAllText(workspace.FilePath));
+        Assert.Equal(copied, workspace.Tree.SelectedObject!.Path);
+
+        workspace.PressWithDialog(Key.F6, dialog =>
+        {
+            Assert.Equal("Move to", dialog.Title);
+            var open = Assert.IsType<OpenDialog>(dialog);
+            open.Path = parked;
+            open.Result = new[] { parked };
+            workspace.App.RequestStop(open);
+        });
+
+        Assert.False(File.Exists(copied));
+        Assert.Equal("preview text", File.ReadAllText(Path.Combine(parked, "notes.txt")));
+        Assert.True(File.Exists(workspace.FilePath));
     }
 
     [Theory]
@@ -100,8 +148,8 @@ public class CommanderKeyTests
         workspace.PressWithDialog(Key.F7, dialog =>
         {
             dialog.SubViews.OfType<TextField>().Single().Text = "notes.txt";
-            dialog.Result = 1;
-            workspace.App.RequestStop(dialog);
+            ((Dialog)dialog).Result = 1;
+            workspace.App.RequestStop((IRunnable)dialog);
         });
 
         Assert.Equal("preview text", File.ReadAllText(workspace.FilePath));
@@ -130,7 +178,7 @@ public class CommanderKeyTests
             string message = dialog.SubViews.OfType<Label>().Single().Text;
             Assert.Contains("test session", message);
             Assert.Equal(running, message.Contains("still running"));
-            Button cancel = dialog.Buttons.Single(button => button.IsDefault);
+            Button cancel = ((Dialog)dialog).Buttons.Single(button => button.IsDefault);
             Assert.Equal("Cancel", cancel.Text);
             Assert.True(cancel.HasFocus);
             dialog.NewKeyDownEvent(escape ? Key.Esc : Key.Enter);
@@ -162,7 +210,7 @@ public class CommanderKeyTests
         workspace.PressWithDialog(Key.F8, dialog =>
         {
             Assert.Equal("Close session", dialog.Title);
-            dialog.Buttons.Single(button => button.Text == "Close").SetFocus();
+            ((Dialog)dialog).Buttons.Single(button => button.Text == "Close").SetFocus();
             dialog.NewKeyDownEvent(Key.Enter);
         });
 
@@ -187,7 +235,7 @@ public class CommanderKeyTests
             Assert.Equal("Close session", dialog.Title);
             if (confirm)
             {
-                dialog.Buttons.Single(button => button.Text == "Close").SetFocus();
+                ((Dialog)dialog).Buttons.Single(button => button.Text == "Close").SetFocus();
             }
 
             dialog.NewKeyDownEvent(Key.Enter);
@@ -231,8 +279,8 @@ public class CommanderKeyTests
                 Assert.Contains("All contents", dialog.SubViews.OfType<Label>().Single().Text);
             }
 
-            dialog.Result = 1;
-            workspace.App.RequestStop(dialog);
+            ((Dialog)dialog).Result = 1;
+            workspace.App.RequestStop((IRunnable)dialog);
         });
 
         Assert.False(Path.Exists(source));
@@ -246,7 +294,7 @@ public class CommanderKeyTests
     [InlineData("Sessions")]
     [InlineData("Files")]
     [InlineData("Terminal")]
-    public void F3TogglesPreviewFromEveryPanelAndBackFromPreview(string panel)
+    public void F4TogglesPreviewFromEveryPanelAndBackFromPreview(string panel)
     {
         using var workspace = new TestWorkspace();
         View focused;
@@ -268,10 +316,10 @@ public class CommanderKeyTests
 
         focused.SetFocus();
         Assert.False(workspace.Preview.Visible);
-        Assert.True(focused.NewKeyDownEvent(Key.F3));
+        Assert.True(focused.NewKeyDownEvent(Key.F4));
         Assert.True(workspace.Preview.Visible);
         Assert.True(workspace.Preview.HasFocus);
-        Assert.True(workspace.Preview.NewKeyDownEvent(Key.F3));
+        Assert.True(workspace.Preview.NewKeyDownEvent(Key.F4));
         Assert.False(workspace.Preview.Visible);
     }
 
@@ -281,9 +329,11 @@ public class CommanderKeyTests
         using var workspace = new TestWorkspace();
         workspace.Screen.ExecuteCommand("terminal");
         workspace.Grid.SetFocus();
+        Assert.False(workspace.Screen.HandleChord(Key.F5, inTerminal: true));
         Assert.False(workspace.Screen.HandleChord(Key.F6, inTerminal: true));
         Assert.False(workspace.Screen.HandleChord(Key.F7, inTerminal: true));
         Assert.False(workspace.Screen.HandleChord(Key.F8, inTerminal: true));
+        Assert.False(workspace.Screen.HandleChord(Key.F5));
         Assert.False(workspace.Screen.HandleChord(Key.F6));
         Assert.False(workspace.Screen.HandleChord(Key.F7));
         Assert.False(workspace.Screen.HandleChord(Key.F8));
@@ -292,6 +342,7 @@ public class CommanderKeyTests
         workspace.Screen.ExecuteCommand("preview");
         workspace.Screen.ExecuteCommand("preview");
         Assert.True(workspace.Preview.HasFocus);
+        Assert.False(workspace.Screen.HandleChord(Key.F5));
         Assert.False(workspace.Screen.HandleChord(Key.F6));
         Assert.False(workspace.Screen.HandleChord(Key.F7));
         Assert.False(workspace.Screen.HandleChord(Key.F8));
@@ -340,6 +391,8 @@ public class CommanderKeyTests
     private sealed class TestWorkspace : IDisposable
     {
         private readonly string _directory = Directory.CreateTempSubdirectory("my-tui-commander").FullName;
+
+        internal string Root => _directory;
         private readonly Window _window;
         private readonly SessionToken _token;
 
@@ -385,15 +438,15 @@ public class CommanderKeyTests
             Tree.SetFocus();
         }
 
-        internal void PressWithDialog(Key key, Action<Dialog> respond)
+        internal void PressWithDialog(Key key, Action<View> respond)
             => RunWithDialog(() => Assert.True(_window.NewKeyDownEvent(key)), respond);
 
-        internal void RunWithDialog(Action action, Action<Dialog> respond)
+        internal void RunWithDialog(Action action, Action<View> respond)
         {
             bool seen = false;
             object timeout = App.AddTimeout(TimeSpan.FromMilliseconds(1), () =>
             {
-                var dialog = Assert.IsType<Dialog>(App.TopRunnableView);
+                var dialog = Assert.IsAssignableFrom<View>(App.TopRunnableView);
                 seen = true;
                 respond(dialog);
                 return false;
@@ -401,7 +454,7 @@ public class CommanderKeyTests
             try
             {
                 action();
-                Assert.True(seen, "Expected a confirmation or rename dialog.");
+                Assert.True(seen, "Expected a dialog.");
             }
             finally
             {

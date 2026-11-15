@@ -443,6 +443,42 @@ public class TerminalSessionTests
         await Task.CompletedTask;
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   \n", null)]
+    [InlineData("\n\n", null)]
+    [InlineData("\r\n", null)]
+    [InlineData("echo hi", "echo hi\n")]
+    [InlineData("echo hi\n", "echo hi\n")]
+    [InlineData("echo hi\n\n", "echo hi\n")]
+    [InlineData("echo hi\r\n", "echo hi\n")]
+    [InlineData("echo hi\r", "echo hi\n")]
+    [InlineData("one\r\ntwo", "one\ntwo\n")]
+    [InlineData("  echo hi  ", "  echo hi  \n")]
+    public void SubmittedTextIsOneCommandWithATrailingNewline(string? text, string? expected)
+    {
+        Assert.Equal(expected, TerminalSession.SubmittedText(text));
+    }
+
+    [UnixFact(Timeout = 15000)]
+    public async Task SubmitRunsTheLineInTheShell()
+    {
+        TerminalSession? session = null;
+        try
+        {
+            session = TerminalSession.Start("/bin/sh", ["/bin/sh"], 80, 24, environment: CleanEnv());
+            session.Submit("echo hello | /usr/bin/tr a-z A-Z");
+            WaitFor(session, value => value.Contains("HELLO"), 5000);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        await Task.CompletedTask;
+    }
+
     private static PaintedCell Cell(ScreenFrame frame, string grapheme) =>
         frame.Cells.First(cell => cell.Grapheme == grapheme);
 

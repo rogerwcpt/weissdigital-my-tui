@@ -5,32 +5,43 @@ namespace MyTui.UI;
 internal enum AppCommand
 {
     Menu,
+    Sessions,
+    Terminal,
+    Files,
     Preview,
-    Rename,
+    Duplicate,
+    Move,
     CreateFolder,
     Delete,
     Quit,
+    Maximize,
+    Restore,
     Copy,
     Paste,
-    Center,
-    Sessions,
 }
 
 /// <summary>
 /// The few keys my-tui keeps for itself, even inside a live terminal. Host terminals and agent
-/// CLIs swallow most chords, so most commands are in the F9 palette only. Rename, create-folder,
-/// and delete are reserved only while Sessions or Files has focus. Session numbers are
-/// Ctrl+Option+1 through Ctrl+Option+9, and Ctrl+Option+0 for session 10, from any panel.
-/// Option is the Alt modifier.
+/// CLIs swallow most chords, so most commands are in the F9 palette only. F1 through F4 toggle
+/// panels from any view. F11 maximizes the focused panel and F12 restores the layout, also from
+/// any view. F5 through F8 act only while Sessions or Files has focus. Session
+/// numbers are Ctrl+Option+1 through Ctrl+Option+9, and Ctrl+Option+0 for session 10, from any
+/// panel. Option is the Alt modifier.
 /// Named AppKeys because KeyBindings is Terminal.Gui's type.
 /// </summary>
 internal static class AppKeys
 {
     internal const string SessionsText = "F1";
 
-    internal const string PreviewText = "F3";
+    internal const string TerminalText = "F2";
 
-    internal const string RenameText = "F6";
+    internal const string FilesText = "F3";
+
+    internal const string PreviewText = "F4";
+
+    internal const string DuplicateText = "F5";
+
+    internal const string MoveText = "F6";
 
     internal const string CreateFolderText = "F7";
 
@@ -52,7 +63,9 @@ internal static class AppKeys
 
     internal const string QuitText = "F10";
 
-    internal const string CenterText = "F12";
+    internal const string MaximizeText = "F11";
+
+    internal const string RestoreText = "F12";
 
     internal const string CopyText = "Ctrl+Shift+C";
 
@@ -93,15 +106,34 @@ internal static class AppKeys
                 return true;
             }
 
+            if (key == Key.F2)
+            {
+                command = AppCommand.Terminal;
+                return true;
+            }
+
             if (key == Key.F3)
+            {
+                command = AppCommand.Files;
+                return true;
+            }
+
+            if (key == Key.F4)
             {
                 command = AppCommand.Preview;
                 return true;
             }
 
+            // F5 duplicates a session, or copies a file when Files has focus.
+            if (key == Key.F5)
+            {
+                command = AppCommand.Duplicate;
+                return true;
+            }
+
             if (key == Key.F6)
             {
-                command = AppCommand.Rename;
+                command = AppCommand.Move;
                 return true;
             }
 
@@ -117,9 +149,15 @@ internal static class AppKeys
                 return true;
             }
 
+            if (key == Key.F11)
+            {
+                command = AppCommand.Maximize;
+                return true;
+            }
+
             if (key == Key.F12)
             {
-                command = AppCommand.Center;
+                command = AppCommand.Restore;
                 return true;
             }
 

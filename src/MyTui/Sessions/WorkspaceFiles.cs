@@ -67,6 +67,20 @@ internal static class WorkspaceFiles
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(target));
     }
 
+    /// <summary>
+    /// Copies <paramref name="path"/> into <paramref name="destinationDirectory"/>.
+    /// The destination stays inside the workspace and an existing name is left alone.
+    /// </summary>
+    internal static string Copy(string root, string path, string destinationDirectory) =>
+        Place(root, path, destinationDirectory, move: false);
+
+    /// <summary>
+    /// Moves <paramref name="path"/> into <paramref name="destinationDirectory"/>.
+    /// Moving an item into the folder that already holds it returns that same path.
+    /// </summary>
+    internal static string Move(string root, string path, string destinationDirectory) =>
+        Place(root, path, destinationDirectory, move: true);
+
     internal static void Delete(string root, string path)
     {
         string source = RequireChild(root, path);
@@ -80,6 +94,81 @@ internal static class WorkspaceFiles
             File.Delete(source);
         }
     }
+
+    private static string Place(string root, string path, string destinationDirectory, bool move)
+    {
+        string source = RequireChild(root, path);
+        string destination = RequireContainer(root, destinationDirectory);
+        string realSource = Workspace.Real(source);
+        string realDestination = Workspace.Real(destination);
+        string prefix = realSource.EndsWith(Path.DirectorySeparatorChar)
+            ? realSource
+            : realSource + Path.DirectorySeparatorChar;
+        if (string.Equals(realDestination, realSource, Comparison)
+            || realDestination.StartsWith(prefix, Comparison))
+        {
+            throw new IOException("Choose a folder that is not inside the selected item.");
+        }
+
+        string target = Path.Combine(destination, Path.GetFileName(source));
+        if (string.Equals(Trim(source), Trim(target), Comparison))
+        {
+            return source;
+        }
+
+        if (Path.Exists(target))
+        {
+            throw new IOException("A file or folder with that name already exists.");
+        }
+
+        bool directory = File.GetAttributes(source).HasFlag(FileAttributes.Directory);
+        if (move)
+        {
+            if (directory)
+            {
+                Directory.Move(source, target);
+            }
+            else
+            {
+                File.Move(source, target);
+            }
+        }
+        else if (directory)
+        {
+            CopyTree(root, source, target);
+        }
+        else
+        {
+            File.Copy(source, target);
+        }
+
+        return Trim(Path.GetFullPath(target));
+    }
+
+    private static void CopyTree(string root, string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (FileNode child in Workspace.Children(root, source))
+        {
+            string childTarget = Path.Combine(target, child.Name);
+            if (child.Directory)
+            {
+                CopyTree(root, child.Path, childTarget);
+            }
+            else
+            {
+                File.Copy(child.Path, childTarget);
+            }
+        }
+    }
+
+    private static string Trim(string path) =>
+        path.Length > 1 ? path.TrimEnd(Path.DirectorySeparatorChar) : path;
+
+    private static StringComparison Comparison =>
+        OperatingSystem.IsMacOS() || OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 
     private static string RequireContainer(string root, string path)
     {

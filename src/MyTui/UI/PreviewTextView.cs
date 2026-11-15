@@ -35,6 +35,10 @@ internal sealed class PreviewTextView : View
         Width = Dim.Fill();
         Height = Dim.Fill();
         ViewportSettings |= ViewportSettingsFlags.HasVerticalScrollBar;
+        // One blank cell on every side. The vertical bar adds its own column and is anchored to the
+        // outer edge, so this right inset stays between the text and the bar.
+        Padding.Thickness = new Thickness(PreviewMarkdown.Inset, PreviewMarkdown.Inset, PreviewMarkdown.Inset, PreviewMarkdown.Inset);
+        VerticalScrollBar.X = Pos.AnchorEnd();
         SetContentSize(new System.Drawing.Size(1, 1));
         _horizontal = new HorizontalBar(this);
         if (Padding is AdornmentImpl adornment)
@@ -140,7 +144,7 @@ internal sealed class PreviewTextView : View
         try
         {
             bool show = Viewport.Width > 1 && GetContentWidth() > Viewport.Width;
-            int bottom = show ? 1 : 0;
+            int bottom = PreviewMarkdown.Inset + (show ? 1 : 0);
             bool layoutChanged = _horizontal.Visible != show || Padding.Thickness.Bottom != bottom;
             if (_horizontal.Visible != show)
             {
@@ -469,7 +473,8 @@ internal sealed class PreviewTextView : View
             CanFocus = false;
             Visible = false;
             X = Pos.Func(_ => owner.Padding.Thickness.Left);
-            Y = Pos.AnchorEnd() - Pos.Func(_ => owner.Padding.Thickness.Bottom - 1);
+            // The outer row is the bar. The inset row above it stays blank, between the text and the bar.
+            Y = Pos.AnchorEnd();
             Width = Dim.Fill(Dim.Func(_ => owner.Padding.Thickness.Right));
             Height = 1;
             SetScheme(HostTheme.Preview());

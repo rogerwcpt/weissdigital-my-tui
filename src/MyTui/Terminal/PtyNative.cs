@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace MyTui.Terminal;
 
@@ -30,6 +31,8 @@ internal static partial class PtyNative
     internal static nuint WindowSizeQuery => OperatingSystem.IsMacOS() ? 0x40087468 : 0x5413u;
 
     internal const int SigWinch = 28;
+
+    private static IntPtr _macLibrary;
 
     private static readonly IntPtr MacIoctl = OperatingSystem.IsMacOS() ? LoadMacIoctl() : IntPtr.Zero;
 
@@ -168,7 +171,49 @@ internal static partial class PtyNative
                 path);
         }
 
-        return NativeLibrary.GetExport(NativeLibrary.Load(path), "mytui_ioctl_winsize");
+        _macLibrary = NativeLibrary.Load(path);
+        return NativeLibrary.GetExport(_macLibrary, "mytui_ioctl_winsize");
+    }
+
+    /// <summary>
+    /// macOS spawn that makes the slave the controlling terminal. Returns 0, or an errno.
+    /// </summary>
+    internal static unsafe int ClaimingSpawn(
+        out int pid,
+        string file,
+        string slave,
+        string? workingDirectory,
+        IntPtr argv,
+        IntPtr envp)
+    {
+        delegate* unmanaged[Cdecl]<int*, byte*, byte*, byte*, IntPtr, IntPtr, int> spawn =
+            (delegate* unmanaged[Cdecl]<int*, byte*, byte*, byte*, IntPtr, IntPtr, int>)
+            NativeLibrary.GetExport(_macLibrary, "mytui_spawn");
+        byte[] fileBytes = Encoding.UTF8.GetBytes(file + "\0");
+        byte[] slaveBytes = Encoding.UTF8.GetBytes(slave + "\0");
+        byte[]? cwdBytes = string.IsNullOrEmpty(workingDirectory)
+            ? null
+            : Encoding.UTF8.GetBytes(workingDirectory + "\0");
+        int child = 0;
+        int error;
+        fixed (byte* filePtr = fileBytes)
+        fixed (byte* slavePtr = slaveBytes)
+        {
+            if (cwdBytes is null)
+            {
+                error = spawn(&child, filePtr, slavePtr, null, argv, envp);
+            }
+            else
+            {
+                fixed (byte* cwdPtr = cwdBytes)
+                {
+                    error = spawn(&child, filePtr, slavePtr, cwdPtr, argv, envp);
+                }
+            }
+        }
+
+        pid = child;
+        return error;
     }
 
     [LibraryImport("libc", EntryPoint = "read", SetLastError = true)]

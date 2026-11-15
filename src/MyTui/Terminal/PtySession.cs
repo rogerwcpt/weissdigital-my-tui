@@ -5,7 +5,9 @@ namespace MyTui.Terminal;
 
 /// <summary>
 /// One Unix process on a PTY. <see cref="System.Diagnostics.Process"/> cannot allocate a pty.
-/// posix_spawn is used so the child never returns into this multithreaded runtime.
+/// Linux uses posix_spawn. macOS forks inside the pty shim, which claims the slave as the
+/// controlling terminal and then execs, so the child never returns into this runtime.
+/// Opening the slave is not enough on macOS, and without a controlling terminal Ctrl+C is only echoed.
 /// </summary>
 internal sealed class PtySession : IDisposable
 {
@@ -89,23 +91,39 @@ internal sealed class PtySession : IDisposable
             PtyNative.SetWindowSize(master, columns, rows);
 
             string[] argv = arguments.Count == 0 ? [file] : arguments.ToArray();
-            using var actions = new SpawnActions();
-            if (!string.IsNullOrWhiteSpace(workingDirectory))
-            {
-                actions.Chdir(workingDirectory);
-            }
-
-            actions.Open(0, slaveName);
-            actions.Dup(0, 1);
-            actions.Dup(0, 2);
-            using var attributes = new SpawnAttributes();
-            attributes.PrepareChild();
             using var args = new NativeStringList(argv);
             using var envp = new NativeStringList(FormatEnvironment(environment));
-            int spawned = PtyNative.Spawn(out int pid, file, actions.Handle, attributes.Handle, args.Pointer, envp.Pointer);
+            int pid;
+            int spawned;
+            if (OperatingSystem.IsMacOS())
+            {
+                spawned = PtyNative.ClaimingSpawn(
+                    out pid,
+                    file,
+                    slaveName,
+                    string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
+                    args.Pointer,
+                    envp.Pointer);
+            }
+            else
+            {
+                using var actions = new SpawnActions();
+                if (!string.IsNullOrWhiteSpace(workingDirectory))
+                {
+                    actions.Chdir(workingDirectory);
+                }
+
+                actions.Open(0, slaveName);
+                actions.Dup(0, 1);
+                actions.Dup(0, 2);
+                using var attributes = new SpawnAttributes();
+                attributes.PrepareChild();
+                spawned = PtyNative.Spawn(out pid, file, actions.Handle, attributes.Handle, args.Pointer, envp.Pointer);
+            }
+
             if (spawned != 0)
             {
-                throw new IOException($"posix_spawn failed: {Marshal.GetPInvokeErrorMessage(spawned)} ({spawned})");
+                throw new IOException($"pty spawn failed: {Marshal.GetPInvokeErrorMessage(spawned)} ({spawned})");
             }
 
             var started = new PtySession(master, pid);

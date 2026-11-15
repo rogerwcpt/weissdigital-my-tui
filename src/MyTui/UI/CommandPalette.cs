@@ -16,7 +16,7 @@ internal static class CommandPalette
 {
     internal const string Shortcut = "F9";
 
-    internal const string Footer = "Command Palette F9";
+    internal const string Footer = "Command Palette \u2014 F9";
 
     internal readonly record struct Entry(string Group, string Title, string Detail, string Id);
 
@@ -25,25 +25,31 @@ internal static class CommandPalette
     private static readonly Entry[] Entries = Sort(
     [
         new("Session", "New session", "", "new"),
-        new("Session", "Duplicate session", "", "duplicate"),
+        new("Session", "Duplicate session", AppKeys.DuplicateText, "duplicate"),
         new("Session", "Start the session", "", "start"),
         new("Session", "Open folder", "", "open"),
+        new("Session", "Refresh Terminal Output", "", "refresh-terminal"),
         new("Session", "Edit the session", "", "edit"),
-        new("Session", "Rename the session", AppKeys.RenameText, "rename"),
+        new("Session", "Rename the session", "", "rename"),
+        new("Session", "Run the selected text in a duplicate session", "", "run-selection"),
         new("Session", "Sort Sessions by Name", "", "sort"),
         new("Session", "Force stop terminal", "", "stop"),
         new("Session", "Templates", "", "templates"),
         new("Session", "Close the session", AppKeys.DeleteText, "close"),
         new("Layout", "Toggle Sessions Panel", AppKeys.SessionsText, "hide"),
-        new("Layout", "Maximize/Restore", "", "maximize"),
+        new("Layout", "Maximize/Restore", AppKeys.MaximizeText, "maximize"),
         new("Layout", "Toggle Preview Panel", AppKeys.PreviewText, "preview"),
-        new("Layout", "Toggle Center Panel", AppKeys.CenterText, "center"),
-        new("Layout", "Restore layout", "", "restore"),
+        new("Layout", "Toggle Center Panel", "", "center"),
+        new("Layout", "Toggle Terminal Panel", AppKeys.TerminalText, "toggle-terminal"),
+        new("Layout", "Toggle Files Panel", AppKeys.FilesText, "toggle-files"),
+        new("Layout", "Restore layout", AppKeys.RestoreText, "restore"),
         new("Layout", "Show Terminal", "", "terminal"),
         new("Layout", "Show Files", "", "files"),
         new("Files", "Open selected file", "", "open-file"),
         new("Files", "Create folder", AppKeys.CreateFolderText, "create-folder"),
-        new("Files", "Rename selected file or folder", AppKeys.RenameText, "rename-file"),
+        new("Files", "Copy selected file or folder", AppKeys.DuplicateText, "copy-file"),
+        new("Files", "Move selected file or folder", AppKeys.MoveText, "move-file"),
+        new("Files", "Rename selected file or folder", "", "rename-file"),
         new("Files", "Delete selected file or folder", AppKeys.DeleteText, "delete-file"),
         new("Files", OperatingSystem.IsMacOS() ? "Reveal in Finder" : "Reveal in File Manager", "", "reveal"),
         new("Files", "Refresh Files", "", "refresh"),
@@ -83,7 +89,7 @@ internal static class CommandPalette
 
         foreach (Entry entry in Entries)
         {
-            if ((filesActive || entry.Id is not ("open-file" or "run-script" or "rename-file" or "delete-file" or "create-folder"))
+            if ((filesActive || entry.Id is not ("open-file" or "run-script" or "rename-file" or "delete-file" or "create-folder" or "copy-file" or "move-file"))
                 && Hits(entry, text))
             {
                 yield return entry;
@@ -375,6 +381,39 @@ internal static class CommandPalette
         {
             dialog.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Centers <see cref="Footer"/> and fills the spare columns with horizontal rules.
+    /// A width too narrow for the phrase returns the phrase unchanged.
+    /// </summary>
+    internal static string FormatFooter(int width)
+    {
+        if (width <= Footer.Length)
+        {
+            return Footer;
+        }
+
+        int spare = width - Footer.Length;
+        int left = spare / 2;
+        int right = spare - left;
+        return Edge(left, before: true) + Footer + Edge(right, before: false);
+    }
+
+    private static string Edge(int width, bool before)
+    {
+        if (width <= 0)
+        {
+            return "";
+        }
+
+        if (width == 1)
+        {
+            return " ";
+        }
+
+        string line = new string('\u2500', width - 1);
+        return before ? line + " " : " " + line;
     }
 
     private static int EntriesMax(Func<Entry, int> measure)

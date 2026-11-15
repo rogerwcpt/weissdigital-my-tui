@@ -114,6 +114,13 @@ internal sealed class CellGridView : View
         {
             _session?.Resize(Viewport.Width, Viewport.Height);
         }
+
+        // A draw at size 0 is discarded. An idle prompt never marks the terminal dirty,
+        // so the next real size has to ask for the cells itself.
+        if (Viewport.Width > 0 && Viewport.Height > 0)
+        {
+            SetNeedsDraw();
+        }
     }
 
     protected override void OnVisibleChanged()
@@ -122,6 +129,7 @@ internal sealed class CellGridView : View
         if (Visible)
         {
             _forceFull = true;
+            SetNeedsDraw();
         }
     }
 

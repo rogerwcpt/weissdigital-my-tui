@@ -10,10 +10,16 @@ public class AppKeysTests
     {
         Assert.True(AppKeys.TryRoute(Key.F1, out AppCommand command));
         Assert.Equal(AppCommand.Sessions, command);
+        Assert.True(AppKeys.TryRoute(Key.F2, out command));
+        Assert.Equal(AppCommand.Terminal, command);
         Assert.True(AppKeys.TryRoute(Key.F3, out command));
+        Assert.Equal(AppCommand.Files, command);
+        Assert.True(AppKeys.TryRoute(Key.F4, out command));
         Assert.Equal(AppCommand.Preview, command);
+        Assert.True(AppKeys.TryRoute(Key.F5, out command));
+        Assert.Equal(AppCommand.Duplicate, command);
         Assert.True(AppKeys.TryRoute(Key.F6, out command));
-        Assert.Equal(AppCommand.Rename, command);
+        Assert.Equal(AppCommand.Move, command);
         Assert.True(AppKeys.TryRoute(Key.F7, out command));
         Assert.Equal(AppCommand.CreateFolder, command);
         Assert.True(AppKeys.TryRoute(Key.F8, out command));
@@ -22,8 +28,10 @@ public class AppKeysTests
         Assert.Equal(AppCommand.Menu, command);
         Assert.True(AppKeys.TryRoute(Key.F10, out command));
         Assert.Equal(AppCommand.Quit, command);
+        Assert.True(AppKeys.TryRoute(Key.F11, out command));
+        Assert.Equal(AppCommand.Maximize, command);
         Assert.True(AppKeys.TryRoute(Key.F12, out command));
-        Assert.Equal(AppCommand.Center, command);
+        Assert.Equal(AppCommand.Restore, command);
         Assert.True(AppKeys.TryRoute(new Key(Key.K) { ModifierKey = ModifierKey.Super }, out command));
         Assert.Equal(AppCommand.Menu, command);
         Assert.False(AppKeys.TryRoute(Key.K, out _));
@@ -80,7 +88,7 @@ public class AppKeysTests
     public static TheoryData<Key> ModifiedFunctionKeys()
     {
         var keys = new TheoryData<Key>();
-        foreach (Key key in new[] { Key.F1, Key.F3, Key.F6, Key.F7, Key.F8, Key.F9, Key.F10, Key.F12 })
+        foreach (Key key in new[] { Key.F1, Key.F2, Key.F3, Key.F4, Key.F5, Key.F6, Key.F7, Key.F8, Key.F9, Key.F10, Key.F11, Key.F12 })
         {
             keys.Add(key.WithCtrl);
             keys.Add(key.WithShift);
@@ -101,7 +109,7 @@ public class AppKeysTests
     public static TheoryData<Key> RemovedKeys() =>
     [
         Key.B.WithCtrl, Key.N.WithCtrl, Key.O.WithCtrl, Key.Q.WithCtrl, Key.Tab.WithCtrl,
-        Key.P.WithCtrl.WithShift, Key.F2, Key.F4, Key.F11, Key.Delete,
+        Key.P.WithCtrl.WithShift, Key.Delete,
     ];
 }
 

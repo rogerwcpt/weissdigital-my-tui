@@ -6,11 +6,11 @@ namespace MyTui.UI;
 
 internal static class FolderDialog
 {
-    internal static OpenDialog Create(string? start)
+    internal static OpenDialog Create(string? start, string? title = null)
     {
         var dialog = new OpenDialog
         {
-            Title = "Open Folder",
+            Title = string.IsNullOrEmpty(title) ? "Open Folder" : title,
             OpenMode = OpenMode.Directory,
             AllowsMultipleSelection = false,
             MustExist = true,
@@ -55,9 +55,9 @@ internal static class FolderDialog
         table.InvokeCommand(Command.Accept);
     }
 
-    internal static string? Ask(IApplication app, string? start)
+    internal static string? Ask(IApplication app, string? start, string? title = null)
     {
-        var dialog = Create(start);
+        var dialog = Create(start, title);
         dialog.KeyDown += (_, key) =>
         {
             if (key == Key.Esc)

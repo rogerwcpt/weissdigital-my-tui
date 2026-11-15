@@ -176,5 +176,64 @@ public sealed class WorkspaceFilesTests : IDisposable
         Assert.Equal("safe", File.ReadAllText(secret));
     }
 
+    [Fact]
+    public void CopyAndMoveStayInsideTheWorkspaceAndDoNotOverwrite()
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(Root, "folder")).FullName;
+        File.WriteAllText(Path.Combine(folder, "keep.txt"), "keep me");
+        string source = Path.Combine(Root, "notes.txt");
+        File.WriteAllText(source, "preview text");
+        string taken = Path.Combine(folder, "notes.txt");
+        File.WriteAllText(taken, "already here");
+
+        Assert.Throws<IOException>(() => WorkspaceFiles.Copy(Root, source, folder));
+        Assert.Equal("already here", File.ReadAllText(taken));
+        Assert.Equal("preview text", File.ReadAllText(source));
+
+        File.Delete(taken);
+        string copied = WorkspaceFiles.Copy(Root, source, folder);
+        Assert.Equal(Path.Combine(folder, "notes.txt"), copied);
+        Assert.Equal("preview text", File.ReadAllText(copied));
+        Assert.True(File.Exists(source));
+
+        string parked = Directory.CreateDirectory(Path.Combine(Root, "parked")).FullName;
+        string moved = WorkspaceFiles.Move(Root, copied, parked);
+        Assert.Equal(Path.Combine(parked, "notes.txt"), moved);
+        Assert.False(File.Exists(copied));
+        Assert.Equal("preview text", File.ReadAllText(moved));
+        Assert.Equal(moved, WorkspaceFiles.Move(Root, moved, parked));
+
+        string copiedFolder = WorkspaceFiles.Copy(Root, folder, parked);
+        Assert.Equal("keep me", File.ReadAllText(Path.Combine(copiedFolder, "keep.txt")));
+        Assert.True(Directory.Exists(folder));
+        string elsewhere = Directory.CreateDirectory(Path.Combine(Root, "elsewhere")).FullName;
+        string movedFolder = WorkspaceFiles.Move(Root, copiedFolder, elsewhere);
+        Assert.Equal(Path.Combine(elsewhere, "folder"), movedFolder);
+        Assert.False(Directory.Exists(copiedFolder));
+
+        Directory.CreateDirectory(Path.Combine(folder, "inner"));
+        Assert.Throws<IOException>(() => WorkspaceFiles.Copy(Root, folder, Path.Combine(folder, "inner")));
+        string outside = Directory.CreateDirectory(Path.Combine(_parent, "outside")).FullName;
+        Assert.Throws<IOException>(() => WorkspaceFiles.Move(Root, source, outside));
+        Assert.Throws<IOException>(() => WorkspaceFiles.Copy(Root, source, outside));
+        Assert.True(File.Exists(source));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(outside));
+    }
+
+    [Fact]
+    public void CopySkipsALinkThatLeavesTheWorkspace()
+    {
+        string outside = Directory.CreateDirectory(Path.Combine(_parent, "outside")).FullName;
+        File.WriteAllText(Path.Combine(outside, "secret.txt"), "safe");
+        string folder = Directory.CreateDirectory(Path.Combine(Root, "folder")).FullName;
+        Directory.CreateSymbolicLink(Path.Combine(folder, "link"), outside);
+        string parked = Directory.CreateDirectory(Path.Combine(Root, "parked")).FullName;
+
+        string copied = WorkspaceFiles.Copy(Root, folder, parked);
+        Assert.False(Path.Exists(Path.Combine(copied, "link")));
+        Assert.Equal("safe", File.ReadAllText(Path.Combine(outside, "secret.txt")));
+        Assert.Throws<IOException>(() => WorkspaceFiles.Move(Root, Path.Combine(folder, "link"), parked));
+    }
+
     public void Dispose() => Directory.Delete(_parent, recursive: true);
 }

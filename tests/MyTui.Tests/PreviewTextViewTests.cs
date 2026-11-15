@@ -1,6 +1,7 @@
 using MyTui.UI;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
 
 namespace MyTui.Tests;
 
@@ -138,9 +139,9 @@ public class PreviewTextViewTests
         view.Layout(new System.Drawing.Size(30, 10));
         string first = string.Join('\n', Enumerable.Range(1, 40).Select(n => $"line {n:000}"));
         view.UpdateOutput(first, reset: true);
-        Assert.Equal(30, view.Viewport.Y);
+        Assert.Equal(40 - view.Viewport.Height, view.Viewport.Y);
         view.UpdateOutput(first + "\nline 041");
-        Assert.Equal(31, view.Viewport.Y);
+        Assert.Equal(41 - view.Viewport.Height, view.Viewport.Y);
 
         view.NewKeyDownEvent(Key.Home);
         Assert.Equal(0, view.Viewport.Y);
@@ -176,10 +177,76 @@ public class PreviewTextViewTests
         Assert.True(view.Layout(new System.Drawing.Size(20, 8)));
         Assert.True(view.GetContentWidth() > view.Viewport.Width);
         Assert.True(view.HasHorizontalBar);
-        Assert.Equal(1, view.Padding.Thickness.Bottom);
+        Assert.Equal(PreviewMarkdown.Inset + 1, view.Padding.Thickness.Bottom);
+        Assert.Equal(PreviewMarkdown.Inset, view.Padding.Thickness.Right);
         Assert.False(view.VerticalScrollBar.Visible);
 
         Assert.True(view.NewKeyDownEvent(Key.CursorRight));
         Assert.Equal(4, view.Viewport.X);
     }
+
+    [Fact]
+    public void LongTextLeavesAColumnBetweenTheTextAndTheScrollbar()
+    {
+        var view = new PreviewTextView
+        {
+            Content = string.Join('\n', Enumerable.Range(1, 40).Select(n => $"line {n:000}")),
+        };
+
+        Assert.True(view.Layout(new System.Drawing.Size(30, 12)));
+        Assert.True(view.VerticalScrollBar.Visible);
+        Assert.Equal(PreviewMarkdown.Inset, view.Padding.Thickness.Left);
+        Assert.Equal(PreviewMarkdown.Inset, view.Padding.Thickness.Top);
+        Assert.Equal(PreviewMarkdown.Inset + 1, view.Padding.Thickness.Right);
+        Assert.Equal(PreviewMarkdown.Inset, view.Padding.Thickness.Bottom);
+        Assert.Equal(30 - PreviewMarkdown.Inset - (PreviewMarkdown.Inset + 1), view.Viewport.Width);
+        Assert.Equal(12 - PreviewMarkdown.Inset - PreviewMarkdown.Inset, view.Viewport.Height);
+        Assert.Equal(view.Frame.Width - 1, view.VerticalScrollBar.Frame.X);
+    }
+
+    [Fact]
+    public void MarkdownLeavesAColumnBetweenTheTextAndTheScrollbar()
+    {
+        using var view = new PreviewMarkdown
+        {
+            Text = string.Join('\n', Enumerable.Range(1, 40).Select(n => $"line {n:000}")),
+            Width = 30,
+            Height = 12,
+        };
+
+        Assert.True(view.Layout(new System.Drawing.Size(30, 12)));
+        Assert.True(view.VerticalScrollBar.Visible);
+        Assert.Equal(PreviewMarkdown.Inset, view.Padding.Thickness.Left);
+        Assert.Equal(PreviewMarkdown.Inset, view.Padding.Thickness.Top);
+        Assert.Equal(PreviewMarkdown.Inset + 1, view.Padding.Thickness.Right);
+        Assert.Equal(PreviewMarkdown.Inset, view.Padding.Thickness.Bottom);
+        Assert.Equal(view.Frame.Width - 1, view.VerticalScrollBar.Frame.X);
+    }
+
+    [Fact]
+    public void CodeCopyClickIsTheCopyMarkOnTheFirstRow()
+    {
+        using var block = new MarkdownCodeBlock { Width = 20, Height = 3 };
+        Assert.True(block.Layout(new System.Drawing.Size(20, 3)));
+        int mark = block.Viewport.Width - 2;
+        Assert.True(PreviewMarkdown.IsCodeCopyClick(Click(block, mark, 0)));
+        Assert.True(PreviewMarkdown.IsCodeCopyClick(Click(block, mark + 1, 0)));
+        Assert.False(PreviewMarkdown.IsCodeCopyClick(Click(block, mark - 1, 0)));
+        Assert.False(PreviewMarkdown.IsCodeCopyClick(Click(block, mark, 1)));
+        Assert.False(PreviewMarkdown.IsCodeCopyClick(Click(block, mark, 0, MouseFlags.LeftButtonReleased)));
+
+        block.ShowCopyButton = false;
+        Assert.False(PreviewMarkdown.IsCodeCopyClick(Click(block, mark, 0)));
+
+        using var text = new PreviewTextView { Width = 20, Height = 3 };
+        Assert.True(text.Layout(new System.Drawing.Size(20, 3)));
+        Assert.False(PreviewMarkdown.IsCodeCopyClick(Click(text, text.Viewport.Width - 2, 0)));
+    }
+
+    private static Mouse Click(View view, int x, int y, MouseFlags flags = MouseFlags.LeftButtonClicked) => new()
+    {
+        View = view,
+        ScreenPosition = view.ViewportToScreen(new System.Drawing.Point(x, y)),
+        Flags = flags,
+    };
 }

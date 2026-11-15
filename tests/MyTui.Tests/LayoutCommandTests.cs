@@ -11,6 +11,130 @@ namespace MyTui.Tests;
 public class LayoutCommandTests
 {
     [Fact]
+    public void F2AndF3ToggleTheVisibleTabAndF4TogglesPreview()
+    {
+        using var workspace = new TestWorkspace();
+        Assert.Equal("Terminal", workspace.Tabs.Value!.Title);
+
+        Assert.True(workspace.Screen.HandleChord(Key.F2, inTerminal: true));
+        Assert.False(workspace.Screen.Content.Visible);
+
+        Assert.True(workspace.Screen.HandleChord(Key.F3));
+        Assert.True(workspace.Screen.Content.Visible);
+        Assert.Equal("Files", workspace.Tabs.Value!.Title);
+        Assert.True(workspace.Tabs.Value.HasFocus);
+
+        Assert.True(workspace.Screen.HandleChord(Key.F3));
+        Assert.False(workspace.Screen.Content.Visible);
+
+        workspace.Screen.ExecuteCommand("toggle-terminal");
+        Assert.True(workspace.Screen.Content.Visible);
+        Assert.Equal("Terminal", workspace.Tabs.Value!.Title);
+
+        Assert.False(workspace.Preview.Visible);
+        Assert.True(workspace.Screen.HandleChord(Key.F4));
+        Assert.True(workspace.Preview.Visible);
+        Assert.True(workspace.Screen.HandleChord(Key.F4));
+        Assert.False(workspace.Preview.Visible);
+    }
+
+    [Fact]
+    public void F11TogglesMaximizeOnTheFocusedPanelAndF12RestoresTheLayout()
+    {
+        using var workspace = new TestWorkspace();
+        ListView sessions = workspace.Screen.Sessions.SubViews.OfType<ListView>().Single();
+        sessions.SetFocus();
+
+        Assert.True(workspace.Screen.HandleChord(Key.F11));
+        Assert.True(workspace.Screen.Sessions.Visible);
+        Assert.False(workspace.Screen.Content.Visible);
+        Assert.True(Caption(workspace.Screen.Sessions).Maximized);
+
+        Assert.True(workspace.Screen.HandleChord(Key.F11));
+        workspace.AssertDefaultLayout();
+
+        workspace.ResizeSessions();
+        workspace.Run("Toggle Preview Panel");
+        Assert.True(workspace.Preview.Visible);
+        Assert.Equal(44, workspace.Screen.Sessions.Frame.Width);
+
+        workspace.Grid.SetFocus();
+        Assert.True(workspace.Screen.HandleChord(Key.F11, inTerminal: true));
+        Assert.False(workspace.Screen.Sessions.Visible);
+        Assert.True(workspace.Screen.Content.Visible);
+        Assert.True(Caption(workspace.Screen.Content).Maximized);
+
+        Assert.True(workspace.Screen.HandleChord(Key.F12, inTerminal: true));
+        workspace.AssertDefaultLayout();
+    }
+
+    private static PanelCaption Caption(FrameView frame) =>
+        frame.Border.GetOrCreateView().SubViews.OfType<PanelCaption>().Single();
+
+    [Fact]
+    public void RefreshTerminalOutputShowsTheTerminalAndRequestsARedraw()
+    {
+        using var workspace = new TestWorkspace();
+        Assert.Equal("Terminal", workspace.Tabs.Value!.Title);
+        workspace.Grid.Draw();
+        Assert.False(workspace.Grid.NeedsDraw);
+
+        workspace.Run("Refresh Terminal Output");
+        Assert.Equal("Terminal", workspace.Tabs.Value!.Title);
+        Assert.True(workspace.Screen.Content.Visible);
+        Assert.True(workspace.Grid.NeedsDraw);
+
+        workspace.Run("Show Files");
+        Assert.Equal("Files", workspace.Tabs.Value!.Title);
+        workspace.Grid.Draw();
+
+        workspace.Run("Refresh Terminal Output");
+        Assert.Equal("Terminal", workspace.Tabs.Value!.Title);
+        Assert.True(workspace.Screen.Content.Visible);
+        Assert.True(workspace.Grid.Visible);
+        Assert.True(workspace.Grid.NeedsDraw);
+    }
+
+    [Fact]
+    public void AVisibleOrSizedGridAsksToDrawWhileTheProgramIsIdle()
+    {
+        using IApplication app = Application.Create();
+        using var grid = new CellGridView((_, _) => false, () => { }, _ => { }, _ => { })
+        {
+            App = app,
+            Width = 10,
+            Height = 4,
+        };
+        using var parent = new View { App = app, Width = 20, Height = 10, CanFocus = true };
+        parent.Add(grid);
+        parent.Layout();
+        grid.Draw();
+        Assert.False(grid.NeedsDraw);
+
+        grid.Visible = false;
+        grid.Visible = true;
+        Assert.True(grid.NeedsDraw);
+
+        grid.Draw();
+        Assert.False(grid.NeedsDraw);
+        grid.Width = 14;
+        parent.Layout();
+        Assert.True(grid.Viewport.Width > 0);
+        Assert.True(grid.NeedsDraw);
+    }
+
+    [Fact]
+    public void SessionsFooterCentersTheCommandPalettePhrase()
+    {
+        using var workspace = new TestWorkspace();
+        Label label = workspace.Screen.Sessions.SubViews.OfType<Label>().Single();
+        string text = label.Text.ToString()!;
+        Assert.Equal(CommandPalette.FormatFooter(label.Viewport.Width), text);
+        Assert.Contains("Command Palette \u2014 F9", text);
+        Assert.StartsWith("\u2500", text);
+    }
+
+    [Fact]
     public void F1TogglesTheSessionsPanelFromTheTerminal()
     {
         using var workspace = new TestWorkspace();
@@ -35,9 +159,9 @@ public class LayoutCommandTests
         workspace.Run("Toggle Center Panel");
 
         Assert.False(workspace.Screen.Content.Visible);
-        Assert.True(workspace.Screen.HandleChord(Key.F12));
+        workspace.Screen.ExecuteCommand("center");
         Assert.True(workspace.Screen.Content.Visible);
-        Assert.True(workspace.Screen.HandleChord(Key.F12));
+        workspace.Screen.ExecuteCommand("center");
         Assert.True(workspace.Screen.Sessions.Visible);
         Assert.True(workspace.Screen.Sessions.HasFocus);
 

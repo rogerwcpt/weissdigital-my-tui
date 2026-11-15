@@ -1,5 +1,6 @@
 using Ghostty.Vt;
 using Ghostty.Vt.Enums;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 using MyTui.Terminal;
 using VtTerminal = Ghostty.Vt.Terminal;
@@ -75,6 +76,24 @@ public class KeyInputTests
             Assert.Equal((byte)char.ToLowerInvariant(key.ToString()[0]), bytes[0]);
             Assert.DoesNotContain((byte)0, bytes);
         }
+    }
+
+    [Theory]
+    [InlineData("\u001b[99;5u")]
+    [InlineData("\u001b[99;5:1u")]
+    [InlineData("\u001b[99;5;3u")]
+    public void KittyCtrlC_IsStillTheInterruptByte(string sequence)
+    {
+        using var terminal = new VtTerminal(80, 24);
+        using var encoder = new KeyEncoder();
+        var parser = new AnsiKeyboardParser();
+        AnsiKeyboardParserPattern? pattern = parser.IsKeyboard(sequence);
+        Assert.NotNull(pattern);
+        Key? key = pattern.GetKey(sequence);
+        Assert.NotNull(key);
+        Assert.Equal(KeyEventType.Press, key.EventType);
+        byte[]? bytes = KeyInput.Encode(terminal, encoder, key);
+        Assert.Equal(new byte[] { 0x03 }, bytes);
     }
 
     [Fact]

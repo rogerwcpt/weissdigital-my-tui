@@ -33,9 +33,11 @@ public class CommandPaletteTests
     public void DuplicateSessionIsAvailableInEitherTab(bool filesActive)
     {
         Assert.Contains(CommandPalette.Matches("", filesActive), entry => entry.Id == "duplicate");
-        CommandPalette.Entry entry = Assert.Single(CommandPalette.Matches("DUPLICATE", filesActive));
-        Assert.Equal("duplicate", entry.Id);
+        CommandPalette.Entry entry = Assert.Single(CommandPalette.Matches("", filesActive), candidate => candidate.Id == "duplicate");
         Assert.Equal("Duplicate session", entry.Title);
+        Assert.Equal("F5", entry.Detail);
+        Assert.Equal("run-selection", Assert.Single(CommandPalette.Matches("run the selected", filesActive)).Id);
+        Assert.Equal("", Assert.Single(CommandPalette.Matches("", filesActive), candidate => candidate.Id == "run-selection").Detail);
     }
 
     [Theory]
@@ -43,6 +45,8 @@ public class CommandPaletteTests
     [InlineData("Toggle Sessions Panel", "hide")]
     [InlineData("Maximize/Restore", "maximize")]
     [InlineData("Toggle Center Panel", "center")]
+    [InlineData("Toggle Terminal Panel", "toggle-terminal")]
+    [InlineData("Toggle Files Panel", "toggle-files")]
     [InlineData("Restore layout", "restore")]
     [InlineData("Show Terminal", "terminal")]
     [InlineData("Show Files", "files")]
@@ -71,14 +75,21 @@ public class CommandPaletteTests
         CommandPalette.Entry entry = Assert.Single(CommandPalette.Matches("F10", filesActive));
         Assert.Equal("quit", entry.Id);
         Assert.Equal("F10", entry.Detail);
-        Assert.Equal("Command Palette F9", CommandPalette.Footer);
+        Assert.Equal("Command Palette \u2014 F9", CommandPalette.Footer);
         Assert.DoesNotContain("Quit", CommandPalette.Footer);
         Assert.DoesNotContain("F10", CommandPalette.Footer);
+        Assert.Equal("\u2500\u2500 Command Palette \u2014 F9 \u2500\u2500", CommandPalette.FormatFooter(26));
+        Assert.Equal(CommandPalette.Footer, CommandPalette.FormatFooter(CommandPalette.Footer.Length));
+        string wide = CommandPalette.FormatFooter(40);
+        Assert.Equal(40, wide.Length);
+        Assert.Equal(10, wide.IndexOf(CommandPalette.Footer, StringComparison.Ordinal));
     }
 
     [Theory]
     [InlineData("create-folder", "F7")]
-    [InlineData("rename-file", "F6")]
+    [InlineData("copy-file", "F5")]
+    [InlineData("move-file", "F6")]
+    [InlineData("rename-file", "")]
     [InlineData("delete-file", "F8")]
     public void FileMutationsAreFilesOnlyAndShowTheirKeys(string id, string shortcut)
     {
@@ -87,11 +98,17 @@ public class CommandPaletteTests
     }
 
     [Theory]
-    [InlineData("preview", "F3")]
-    [InlineData("rename", "F6")]
+    [InlineData("preview", "F4")]
+    [InlineData("rename", "")]
     [InlineData("close", "F8")]
-    [InlineData("center", "F12")]
+    [InlineData("center", "")]
     [InlineData("hide", "F1")]
+    [InlineData("toggle-terminal", "F2")]
+    [InlineData("toggle-files", "F3")]
+    [InlineData("duplicate", "F5")]
+    [InlineData("maximize", "F11")]
+    [InlineData("restore", "F12")]
+    [InlineData("refresh-terminal", "")]
     public void ExistingActionsShowTheirCommanderKeys(string id, string shortcut)
     {
         Assert.Equal(shortcut, Assert.Single(CommandPalette.Matches("", filesActive: false), entry => entry.Id == id).Detail);
@@ -110,8 +127,9 @@ public class CommandPaletteTests
         }
 
         Assert.All(entries.Where(entry => entry.Group != "Clipboard"
-                && entry.Id is not ("quit" or "preview" or "rename" or "close" or "center" or "hide"
-                    or "rename-file" or "delete-file" or "create-folder")),
+                && entry.Id is not ("quit" or "preview" or "close" or "hide" or "duplicate"
+                    or "toggle-terminal" or "toggle-files" or "delete-file" or "create-folder"
+                    or "copy-file" or "move-file" or "maximize" or "restore")),
             entry => Assert.Empty(entry.Detail));
     }
 
@@ -125,7 +143,8 @@ public class CommandPaletteTests
 
         Assert.Equal(
             ["Maximize/Restore", "Restore layout", "Show Files", "Show Terminal",
-             "Toggle Center Panel", "Toggle Preview Panel", "Toggle Sessions Panel"],
+             "Toggle Center Panel", "Toggle Files Panel", "Toggle Preview Panel",
+             "Toggle Sessions Panel", "Toggle Terminal Panel"],
             titles);
     }
 
@@ -215,10 +234,12 @@ public class CommandPaletteTests
         List<CommandPalette.Entry?> rows = CommandPalette.Rows(CommandPalette.Matches("pa", filesActive: false));
         Assert.Null(rows[0]);
         Assert.Equal("center", rows[1]!.Value.Id);
-        Assert.Equal("preview", rows[2]!.Value.Id);
-        Assert.Equal("hide", rows[3]!.Value.Id);
-        Assert.Null(rows[4]);
-        Assert.Equal("paste", rows[5]!.Value.Id);
-        Assert.Equal(6, rows.Count);
+        Assert.Equal("toggle-files", rows[2]!.Value.Id);
+        Assert.Equal("preview", rows[3]!.Value.Id);
+        Assert.Equal("hide", rows[4]!.Value.Id);
+        Assert.Equal("toggle-terminal", rows[5]!.Value.Id);
+        Assert.Null(rows[6]);
+        Assert.Equal("paste", rows[7]!.Value.Id);
+        Assert.Equal(8, rows.Count);
     }
 }

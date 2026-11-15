@@ -178,6 +178,32 @@ internal sealed class TerminalSession : IDisposable
         MarkDirty();
     }
 
+    /// <summary>
+    /// The text as one submission: line endings normalized, trailing blank lines removed, and a final
+    /// newline so a shell executes the last line. Null when there is nothing to run.
+    /// </summary>
+    internal static string? SubmittedText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        string normalized = text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n');
+        return normalized.Length == 0 ? null : normalized + "\n";
+    }
+
+    /// <summary>Sends <paramref name="text"/> as typed input, with a newline so the last line runs.</summary>
+    internal void Submit(string? text)
+    {
+        if (SubmittedText(text) is not { } command)
+        {
+            return;
+        }
+
+        Write(Encoding.UTF8.GetBytes(command));
+    }
+
     internal void Paste(string text)
     {
         if (string.IsNullOrEmpty(text))
