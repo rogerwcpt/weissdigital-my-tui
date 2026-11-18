@@ -103,6 +103,8 @@ Host terminals and agent CLIs swallow most key chords, so most commands are in t
 
 Drag in a preview to select text; releasing copies it, as in the terminal. The copy mark on a code block copies that block. Either one shows Copied. Double-click selects a word and triple-click a line in plain-text previews. In plain-text previews, Ctrl+A selects all and Shift+Left/Right extends the selection. Previews are read-only: Ctrl+Shift+V pastes into the session's terminal, not the file.
 
+File previews check for external changes every half second while visible. Text and Markdown refresh without jumping to the top or following appended content. The scroll position is preserved, or clamped to the remaining content if the file becomes shorter.
+
 Drag the vertical border between Sessions and the main panel to resize the session list. The width is kept while you hide or maximize panels, and it is saved for the next launch. Restore layout returns Sessions to its default width. Both panels keep a minimum width, and the terminal resizes to fit.
 
 Alt+Up and Alt+Down reorder sessions in the list. **Sort Sessions by Name** sorts the list case-insensitively on demand; manual reordering still works afterward. Either change renumbers the Ctrl+Option session chords. Shift+PageUp and Shift+PageDown scroll terminal history; Shift+Home goes to the top and Shift+End returns to the prompt. The mouse wheel scrolls shell history or is passed to a full-screen program.
