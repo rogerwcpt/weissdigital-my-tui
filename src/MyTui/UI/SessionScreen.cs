@@ -61,6 +61,9 @@ internal sealed class SessionScreen : IDisposable
     private long _statusUntil;
     private ScriptRun? _shownScript;
     private int _scriptVersion;
+    private FileInfo? _previewFile;
+    private (DateTime Written, DateTime Created, long Length)? _previewVersion;
+    private long _nextPreviewCheck;
 
     /// <summary>Selected session row, with a close mark in the last column.</summary>
     internal static string ActiveRow(string label, int width) => SessionRow(label, width, active: true);
@@ -2322,6 +2325,8 @@ internal sealed class SessionScreen : IDisposable
     private void ShowPreview(Session? session)
     {
         _shownScript = null;
+        _previewFile = null;
+        _previewVersion = null;
         if (session?.ShowingScriptOutput == true && session.Script is { } script)
         {
             _shownScript = script;
@@ -2346,7 +2351,59 @@ internal sealed class SessionScreen : IDisposable
             return;
         }
 
-        ApplyPreview(PreviewText.Read(session.SelectedPath));
+        if (string.IsNullOrWhiteSpace(session.SelectedPath))
+        {
+            ApplyPreview(PreviewText.Read(session.SelectedPath));
+            return;
+        }
+
+        _previewFile = new FileInfo(session.SelectedPath);
+        UpdateFilePreview(session, reset: true);
+    }
+
+    private void UpdateFilePreview(Session session, bool reset = false)
+    {
+        if (_previewFile is not { } file)
+        {
+            return;
+        }
+
+        long now = Environment.TickCount64;
+        if (!reset && now < _nextPreviewCheck)
+        {
+            return;
+        }
+
+        _nextPreviewCheck = now + 500;
+        if (!Workspace.IsInside(session.Cwd, file.FullName))
+        {
+            _previewVersion = null;
+            ApplyPreview(new PreviewText.Content(PreviewText.Kind.None, "Outside the session directory."), reset);
+            return;
+        }
+
+        (DateTime Written, DateTime Created, long Length)? version;
+        try
+        {
+            file.Refresh();
+            version = file.Exists ? (file.LastWriteTimeUtc, file.CreationTimeUtc, file.Length) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _previewVersion = null;
+            ApplyPreview(new PreviewText.Content(PreviewText.Kind.None,
+                ex is UnauthorizedAccessException ? "Cannot read this file." : ex.Message), reset);
+            return;
+        }
+
+        if (!reset && version is not null && version == _previewVersion)
+        {
+            return;
+        }
+
+        PreviewText.Content content = PreviewText.Read(file.FullName);
+        _previewVersion = content.Kind == PreviewText.Kind.None ? null : version;
+        ApplyPreview(content, reset);
     }
 
     private void UpdateScriptPreview(ScriptRun script, bool reset = false)
@@ -2365,19 +2422,19 @@ internal sealed class SessionScreen : IDisposable
         _text.UpdateOutput(snapshot.Text, reset);
     }
 
-    private void ApplyPreview(PreviewText.Content content)
+    private void ApplyPreview(PreviewText.Content content, bool reset = true)
     {
         _markdown.Visible = content.Kind == PreviewText.Kind.Markdown;
         _text.Visible = content.Kind == PreviewText.Kind.Text;
         _note.Visible = !_markdown.Visible && !_text.Visible;
         if (_markdown.Visible)
         {
-            _markdown.Text = content.Text;
+            _markdown.UpdateContent(content.Text, reset);
         }
 
         if (_text.Visible)
         {
-            _text.Content = content.Text;
+            _text.UpdateContent(content.Text, reset);
         }
 
         if (_note.Visible)
@@ -2546,6 +2603,10 @@ internal sealed class SessionScreen : IDisposable
             && ReferenceEquals(script, _shownScript) && _preview.Visible)
         {
             UpdateScriptPreview(script);
+        }
+        else if (_manager.Focused is { ShowingScriptOutput: false } session && _preview.Visible)
+        {
+            UpdateFilePreview(session);
         }
 
         UpdateStatus();

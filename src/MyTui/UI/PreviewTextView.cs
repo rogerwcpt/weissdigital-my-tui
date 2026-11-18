@@ -64,8 +64,10 @@ internal sealed class PreviewTextView : View
     internal string Content
     {
         get => _content;
-        set => SetContent(value, reset: true, follow: false);
+        set => UpdateContent(value, reset: true);
     }
+
+    internal void UpdateContent(string value, bool reset = false) => SetContent(value, reset, follow: false);
 
     /// <summary>Follow live output only at the bottom, preserving a reader's scroll and selection.</summary>
     internal void UpdateOutput(string value, bool reset = false) => SetContent(value, reset, follow: true);

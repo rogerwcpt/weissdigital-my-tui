@@ -23,6 +23,24 @@ internal sealed class PreviewMarkdown : Markdown
     /// <summary>Called with the text when a drag, double-click, or triple-click ends with a selection.</summary>
     internal Action<string>? Selected { get; set; }
 
+    internal void UpdateContent(string value, bool reset = false)
+    {
+        if (!reset && Text == value)
+        {
+            return;
+        }
+
+        Point previous = Viewport.Location;
+        Text = value;
+        Layout();
+        Viewport = Viewport with
+        {
+            X = reset ? 0 : Math.Clamp(previous.X, 0, Math.Max(0, GetContentWidth() - Viewport.Width)),
+            Y = reset ? 0 : Math.Clamp(previous.Y, 0, Math.Max(0, GetContentHeight() - Viewport.Height)),
+        };
+        SetNeedsDraw();
+    }
+
     /// <summary>
     /// The copy mark is drawn in the code block, and that view copies without raising an event.
     /// The same cells the block treats as the mark: the last two columns of its first row.
